@@ -1,0 +1,14 @@
+{
+  "name": "pitch-reserve-local",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.ts",
+    "check": "tsc --noEmit",
+    "test": "node --disable-warning=ExperimentalWarning --test tests/*.test.ts"
+  },
+  "dependencies": { "playwright": "^1.56.0" },
+  "devDependencies": { "typescript": "^5.9.3", "@types/node": "^24.0.0" }
+}

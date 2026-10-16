@@ -1,0 +1,38 @@
+import { DatabaseSync } from 'node:sqlite';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { initialPolicy } from './domain.ts';
+import type { Policy, Resource, ScanResult } from './domain.ts';
+
+export class Store {
+  db: DatabaseSync;
+  constructor(path: string) {
+    mkdirSync(dirname(path), { recursive: true }); this.db = new DatabaseSync(path);
+    this.db.exec(`PRAGMA journal_mode=WAL;
+      CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS scans (id INTEGER PRIMARY KEY, resource TEXT NOT NULL, at TEXT NOT NULL, result TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, at TEXT NOT NULL, message TEXT NOT NULL);`);
+  }
+  policy(): Policy {
+    const row = this.db.prepare('SELECT value FROM config WHERE key=?').get('policy') as { value: string } | undefined;
+    return row ? { ...JSON.parse(row.value), autoHold: false } : this.savePolicy(initialPolicy());
+  }
+  savePolicy(policy: Policy): Policy {
+    const safe = { ...policy, autoHold: false as const };
+    this.db.prepare('INSERT OR REPLACE INTO config VALUES (?,?)').run('policy', JSON.stringify(safe)); return safe;
+  }
+  saveScan(resource: Resource, result: ScanResult) {
+    this.db.prepare('INSERT INTO scans (resource,at,result) VALUES (?,?,?)').run(resource.id, new Date().toISOString(), JSON.stringify(result));
+    this.db.exec('DELETE FROM scans WHERE id NOT IN (SELECT id FROM scans ORDER BY id DESC LIMIT 400)');
+  }
+  latest(resourceId: string): { at: string; result: ScanResult } | null {
+    const row = this.db.prepare('SELECT at,result FROM scans WHERE resource=? ORDER BY id DESC LIMIT 1').get(resourceId) as { at: string; result: string } | undefined;
+    return row ? { at: row.at, result: JSON.parse(row.result) } : null;
+  }
+  event(message: string) {
+    this.db.prepare('INSERT INTO events (at,message) VALUES (?,?)').run(new Date().toISOString(), message);
+    this.db.exec('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 100)');
+  }
+  events() { return this.db.prepare('SELECT at,message FROM events ORDER BY id DESC LIMIT 20').all(); }
+  close() { this.db.close(); }
+}
