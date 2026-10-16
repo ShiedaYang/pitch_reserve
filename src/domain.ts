@@ -1,5 +1,5 @@
 export type ProviderId = 'ggcb' | 'council' | 'playfootball';
-export type Availability = 'AVAILABLE' | 'BOOKED' | 'UNKNOWN' | 'NEARBY';
+export type Availability = 'AVAILABLE' | 'BOOKED' | 'UNAVAILABLE' | 'UNKNOWN' | 'NEARBY';
 export interface Resource { id: string; provider: ProviderId; name: string; format: string; url: string; }
 export const resources: Resource[] = [
   { id: 'ggcb-half', provider: 'ggcb', name: 'GGCB', format: '6v6 · 半场 · 55分钟', url: 'https://ggcb.co.uk/booking/6-a-side-3g-half-pitch/' },
@@ -11,10 +11,10 @@ export const providerIds: ProviderId[] = ['ggcb', 'council', 'playfootball'];
 export const loginUrls: Record<ProviderId, string> = {
   ggcb: 'https://ggcb.co.uk/my-account/',
   council: 'https://towerhamlets-self.achieveservice.com/login?return_url=%2FRenderAchieveForms&lang=en&appName=Self',
-  playfootball: 'https://www.playfootball.net/my-account'
+  playfootball: 'https://partners.playfootball.net/Login'
 };
 export interface Policy { dateFrom: string; dateTo: string; timezone: string; intervalMinutes: number; autoHold: false; }
-export interface Observation { resourceId: string; date: string; start: string; duration: number | null; availability: Availability; price: string | null; note: string; }
+export interface Observation { resourceId: string; date: string; start: string; duration: number | null; availability: Availability; price: string | null; note: string; bookingUrl?:string; priceNote?:string; }
 export interface Coverage { date: string; status: 'READ' | 'UNKNOWN' | 'OUTSIDE_RELEASE_WINDOW'; note: string; }
 export interface ScanResult {
   observations: Observation[]; coverage: Coverage[]; summary: string;

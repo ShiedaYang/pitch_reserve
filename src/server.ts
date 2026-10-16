@@ -10,7 +10,8 @@ import type { ProviderId } from './domain.ts';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const local = join(root, '.local'); mkdirSync(local, { recursive: true });
-const store = new Store(join(local, 'monitor.sqlite')); const monitor = new Monitor(store, local);
+const store = new Store(join(local, 'monitor.sqlite')); const monitor = new Monitor(store, local,true);
+await monitor.restoreCredentials();
 const port = Number(process.env.PORT || 4318); const origin = `http://127.0.0.1:${port}`;
 const token = randomBytes(32).toString('hex');
 function validToken(input: unknown) { return typeof input === 'string' && input.length === token.length && timingSafeEqual(Buffer.from(input), Buffer.from(token)); }
@@ -29,8 +30,18 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/state') { json(200, { ...monitor.state(), csrf: token }); return; }
     if (req.method !== 'POST') { json(404, { error: '接口不存在' }); return; }
     if (!validToken(req.headers['x-console-token']) || req.headers['content-type'] !== 'application/json') { json(403, { error: '请刷新控制台后再操作' }); return; }
-    let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 4096) { json(413, { error: '请求过大' }); return; } }
+    let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 8192) { json(413, { error: '请求过大' }); return; } }
     const body = JSON.parse(raw || '{}');
+    if(url.pathname==='/api/council/defaults'){json(200,{defaults:store.saveCouncilDefaults(body)});return;}
+    if(url.pathname==='/api/council/prepare'){json(200,await monitor.prepareCouncil());return;}
+    const authMatch=url.pathname.match(/^\/api\/providers\/(ggcb|council|playfootball)\/(auto-login|retry-login|forget-credentials)$/);
+    if(authMatch) {
+      const id=authMatch[1] as ProviderId;
+      if(authMatch[2]==='forget-credentials') {await monitor.sessions.get(id)!.forgetCredentials();json(200,{message:'已清除本机保存及内存中的账号密码；现有网站会话仍保留。'});}
+      else json(200,await monitor.automaticLogin(id,body,authMatch[2]==='retry-login'));
+      return;
+    }
+    if(url.pathname==='/api/slots/open') {json(200,await monitor.openSlot(body.resourceId,body.date,body.start));return;}
     const inspectMatch = url.pathname.match(/^\/api\/providers\/(ggcb|council|playfootball)\/inspect$/);
     if (inspectMatch) { json(200, await monitor.sessions.get(inspectMatch[1] as ProviderId)!.inspect()); return; }
     if (url.pathname === '/api/shutdown') { json(200, { ok: true }); void shutdown(); return; }
@@ -45,7 +56,7 @@ const server = createServer(async (req, res) => {
     if (match && providerIds.includes(match[1] as ProviderId)) { await monitor.action(match[1] as ProviderId, match[2], body.resourceId); json(200, { ok: true }); return; }
     json(404, { error: '接口不存在；自动锁位未实现' });
   } catch (error) {
-    const message = error instanceof Error && /请|该网站|场馆|不支持|已暂停|页面仍/.test(error.message) ? error.message : '操作失败，请检查浏览器是否可打开，或稍后重试';
+    const message = error instanceof Error && /^(?:Council默认选项|请先登录Council|未能确认官网开放时段|官网(?:场地|队伍)选项结构|本地凭据保存失败|请输入(?:有效账号和密码|账号和密码)|该网站正在处理上一项操作|场馆不存在|场馆或场次不存在|不支持的操作|已暂停，等待人工接管|页面仍显示登录表单|该场次观察已更新)/.test(error.message) ? error.message : '操作失败，请检查浏览器是否可打开，或稍后重试';
     json(400, { error: message });
   }
 });

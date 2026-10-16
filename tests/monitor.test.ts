@@ -9,6 +9,7 @@ import { mapCalendar, readCalendar, scanPlayFootball } from '../src/adapters/pla
 import { scanCouncil } from '../src/adapters/council.ts';
 import { ProviderSession, Interrupted } from '../src/browser.ts';
 import { Store } from '../src/store.ts';
+import {Monitor} from '../src/monitor.ts';
 
 test('London dates keep weekday and weekly grouping across the October clock change', () => {
   assert.equal(londonDate(new Date('2026-10-24T23:30:00Z')), '2026-10-25');
@@ -44,7 +45,7 @@ test('read-only calendar scan never follows a bookable slot and maps actual DOM 
     const snapshot = await readCalendar(page); assert.equal(snapshot.rows.length, 2);
     assert.equal(mapCalendar(snapshot, resources[2], '2026-10-15')[0].availability, 'AVAILABLE');
     const session = new ProviderSession('playfootball', '.local/test-unused');
-    const result = await scanPlayFootball(page, resources[2], { ...initialPolicy(), dateFrom:'2026-10-15', dateTo:'2026-10-15' }, session);
+    const result = await scanPlayFootball(page, resources[2], { ...initialPolicy(), dateFrom:'2026-10-15', dateTo:'2026-10-15' }, session,'2026-10-15');
     assert.equal(result.observations[0].start, '18:00');
     assert.equal(await page.locator('body').getAttribute('data-booked'), null);
   } finally { await browser.close(); }
@@ -56,6 +57,17 @@ test('SQLite keeps latest results and cannot enable automatic holds', () => {
     store.saveScan(resources[0], { status:'ERROR', observations:[], coverage:[{date:'2026-10-15',status:'UNKNOWN',note:'failure'}], summary:'查询失败' });
     assert.equal(store.latest(resources[0].id)?.result.coverage[0].status, 'UNKNOWN');
   } finally { store.close(); rmSync(dir, { recursive:true, force:true }); }
+});
+
+test('slot handoff only opens a fixed resource entry from a current available observation',async()=>{
+  const store=new Store(':memory:');const monitor=new Monitor(store,'.local/test-unused');const opened:string[]=[];
+  try {
+    const session=monitor.sessions.get('playfootball')!;session.manual=async url=>{session.mode='MANUAL_CONTROL';opened.push(url!);};
+    await assert.rejects(monitor.openSlot(resources[3].id,'2026-11-05','18:00'),/观察已更新/);
+    store.saveScan(resources[3],{status:'PARTIAL',coverage:[],observations:[{resourceId:resources[3].id,date:'2026-11-05',start:'18:00',availability:'AVAILABLE',duration:60,price:'£110.00',note:'fixture',bookingUrl:'https://untrusted.example.invalid/checkout'}],summary:'fixture'});
+    await assert.rejects(monitor.openSlot('https://untrusted.example.invalid','2026-11-05','18:00'),/不存在/);
+    const result=await monitor.openSlot(resources[3].id,'2026-11-05','18:00');assert.equal(result.url,resources[3].url);assert.deepEqual(opened,[resources[3].url]);assert.equal(session.mode,'MANUAL_CONTROL');assert.equal(store.policy().autoHold,false);
+  }finally{store.close();}
 });
 
 test('Council address editor pauses monitoring without changing or submitting personal fields', async () => {
@@ -87,6 +99,6 @@ test('Council address editor pauses monitoring without changing or submitting pe
     assert.equal(await frame.locator('body').getAttribute('data-submitted'),null);
     await frame.locator('form').evaluate(el=>(el as HTMLElement).hidden=true); session.mode='AUTOMATION';
     const hidden = await scanCouncil(page,policy,session);
-    assert.equal(session.mode,'AUTOMATION'); assert.ok(!hidden.summary.includes('地址下拉框'));
+    assert.equal(session.mode,'MANUAL_CONTROL'); assert.ok(!hidden.summary.includes('地址下拉框'));
   } finally { await browser.close(); }
 });

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { councilDate, scanCouncilCalendar } from '../src/adapters/council-calendar.ts';
+import { councilDate, scanCouncilCalendar,readCouncilSlots } from '../src/adapters/council-calendar.ts';
 import { ProviderSession } from '../src/browser.ts';
 import { initialPolicy } from '../src/domain.ts';
 
@@ -43,5 +43,7 @@ test('Council reads date pages through an empty carousel transition without sele
     assert.match(unavailable.coverage.find(c=>c.date==='2026-10-27')!.note,/UNAVAILABLE/);
     assert.match(unavailable.navigation!,/6\/6/);
     assert.equal(await form.locator('#duration').inputValue(),'19');
+    await form.locator('#time_selector').evaluate(el=>{(el as HTMLElement).hidden=false;el.innerHTML='<li class="availability-available"><a class="select-time">18:00</a><span>£38.00</span><span hidden>£999.00</span></li><li class="availability-available"><a class="select-time">18:00</a><span>£34.00 or £38.00</span></li>';});
+    const quoted=await readCouncilSlots(form);assert.equal(quoted[0].price,'£38.00');assert.equal(quoted[1].price,null);
   } finally {await browser.close();}
 });

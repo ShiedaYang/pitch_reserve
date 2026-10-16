@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { initialPolicy } from './domain.ts';
 import type { Policy, Resource, ScanResult } from './domain.ts';
+import {parseCouncilDefaults} from './council-defaults.ts';
 
 export class Store {
   db: DatabaseSync;
@@ -21,6 +22,8 @@ export class Store {
     const safe = { ...policy, autoHold: false as const };
     this.db.prepare('INSERT OR REPLACE INTO config VALUES (?,?)').run('policy', JSON.stringify(safe)); return safe;
   }
+  councilDefaults() {const row=this.db.prepare('SELECT value FROM config WHERE key=?').get('council-defaults') as {value:string}|undefined;return row?parseCouncilDefaults(JSON.parse(row.value)):null;}
+  saveCouncilDefaults(input:unknown){const defaults=parseCouncilDefaults(input);this.db.prepare('INSERT OR REPLACE INTO config VALUES (?,?)').run('council-defaults',JSON.stringify(defaults));return defaults;}
   saveScan(resource: Resource, result: ScanResult) {
     this.db.prepare('INSERT INTO scans (resource,at,result) VALUES (?,?,?)').run(resource.id, new Date().toISOString(), JSON.stringify(result));
     this.db.exec('DELETE FROM scans WHERE id NOT IN (SELECT id FROM scans ORDER BY id DESC LIMIT 400)');

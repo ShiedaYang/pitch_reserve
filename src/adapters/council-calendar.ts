@@ -17,10 +17,13 @@ export async function readCouncilDays(form:Frame) {
   return form.locator('#booking_day_selector .carousel-item.active #week-cal .bds-day').evaluateAll(elements=>elements.map(el=>({weekday:(el.querySelector('.day')?.textContent||'').trim(),label:(el.querySelector('.date')?.textContent||'').trim()})));
 }
 export async function readCouncilSlots(form:Frame) {
-  return form.locator('#time_selector li').evaluateAll(elements=>elements.map(el=>({
+  return form.locator('#time_selector li').evaluateAll(elements=>elements.map(el=>{
+    const text=(el as HTMLElement).innerText;const prices=[...new Set(text.match(/£\s*\d[\d,]*(?:\.\d{2})?/g)||[])];
+    return {
     time:(el.querySelector('.select-time') as HTMLElement|null)?.innerText.match(/^\s*(\d{1,2}:\d{2})/)?.[1] || '',
+    price:prices.length===1?prices[0].replace(/£\s*/,'£'):null,
     availability:el.classList.contains('availability-available')?'AVAILABLE' as const:el.classList.contains('availability-unavailable')?'BOOKED' as const:'UNKNOWN' as const
-  })));
+  };}));
 }
 
 export async function scanCouncilCalendar(form:Frame,policy:Policy,session:ProviderSession):Promise<ScanResult> {
@@ -71,7 +74,7 @@ export async function scanCouncilCalendar(form:Frame,policy:Policy,session:Provi
           await form.locator('#time_selector li .select-time').first().waitFor({state:'attached',timeout:5000});
           const slots=await readCouncilSlots(form); const target=slots.filter(slot=>slot.time==='18:00');
           if(target.length===1 && target[0].availability!=='UNKNOWN') {
-            read.add(day.date); observations.push({resourceId:'stepney-third',date:day.date,start:'18:00',duration:null,availability:target[0].availability,price:null,note:target[0].availability==='AVAILABLE'?'官网18:00可选；未选择场次，租期和报价待核实':'官网18:00明确标为不可用'});
+            read.add(day.date); observations.push({resourceId:'stepney-third',date:day.date,start:'18:00',duration:null,availability:target[0].availability,price:target[0].price,note:target[0].availability==='AVAILABLE'?'官网18:00可选；未选择场次，租期及最终报价待核实':'官网18:00明确标为不可用'});
           }
         } catch {
           session.assertAutomatic();

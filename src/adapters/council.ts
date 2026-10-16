@@ -3,28 +3,19 @@ import type { Policy, ScanResult } from '../domain.ts';
 import { targetDates } from '../domain.ts';
 import type { ProviderSession } from '../browser.ts';
 import { statSync } from 'node:fs';
+import {loadAuth} from '../auth-runtime.ts';
 
 export async function scanCouncil(page: Page, policy: Policy, session: ProviderSession): Promise<ScanResult> {
-  // Keep already-running sessions safe when this adapter is hot-reloaded, too.
-  // Cold starts also preserve the wizard in ProviderSession.page().
   const pageModule = new URL('../council-page.ts',import.meta.url);
   const version = String(statSync(pageModule).mtimeMs);
   const { councilUserPage } = await import(`${pageModule.href}?v=${version}`) as typeof import('../council-page.ts');
-  type PreservingPage = ProviderSession['page'] & { preservesCouncilForm?: string };
-  if ((session.page as PreservingPage).preservesCouncilForm !== version) {
-    const original = session.page.bind(session);
-    session.page = Object.assign(async (resource: Parameters<ProviderSession['page']>[0]) => {
-      session.assertAutomatic();
-      const current = resource.provider === 'council' ? await councilUserPage(session) : undefined;
-      session.assertAutomatic(); return current || original(resource);
-    }, { preservesCouncilForm:version });
-  }
   page = await councilUserPage(session) || page;
   await page.locator('body').waitFor(); session.assertAutomatic();
-  const password = await page.locator('input[type=password]:visible').count();
+  const auth=await (await loadAuth()).authSignals(page,'council');
   const gate = await page.getByRole('heading', { name: 'Before you begin', exact: true }).count();
-  const login = !!password || !!gate;
+  const login = auth.password || (!!gate && !auth.authenticated);
   if (login) session.status = 'LOGIN_REQUIRED';
+  else if(auth.authenticated)session.status='AUTHENTICATED';
   const form = page.frames().find(frame => frame !== page.mainFrame());
   if (form && await form.getByRole('heading',{name:'Booking a pitch',exact:true}).count()) {
     const calendarModule=new URL('./council-calendar.ts',import.meta.url);
@@ -63,8 +54,9 @@ export async function scanCouncil(page: Page, policy: Policy, session: ProviderS
     sizes: Array.from(document.querySelectorAll('label')).map(el=>(el.textContent||'').trim()).filter(t=>t==='Third'),
     hasCalendar: !!document.querySelector('[role=grid],.ui-datepicker,.fc,[class*=calendar]')
   })).catch(()=>null) : null;
+  if(!login)session.mode='MANUAL_CONTROL';
   // Until the authenticated form is verified, never infer inventory from arbitrary form text.
   return { status: login ? 'LOGIN_REQUIRED' : 'PARTIAL', observations: [],
     coverage: targetDates(policy).map(date => ({ date, status: 'UNKNOWN', note: login ? '需要手动登录后读取日历' : '登录后页面已可访问，场地及日历结构待验证' })),
-    summary: login ? '已到达账号门槛。请点击“手动登录”，登录后检测并恢复。' : signals?.sizes.length ? `登录后已验证${signals.pitch || 'Stepney Green'}及Third选项。请在官网完成个人资料后停在Book pitch日历；当前不判断库存。` : '页面已可访问；需验证Stepney Green三分之一场的实际日历，当前不判断库存。' };
+    summary: login ? '已到达账号门槛。请使用控制台自动登录，或手动接管完成官网登录。' : signals?.sizes.length ? `登录后已验证${signals.pitch || 'Stepney Green'}及Third选项。请在官网完成个人资料后停在Book pitch日历；当前不判断库存。` : '页面已可访问；请在官网确认Stepney Green三分之一场及资料，进入Book pitch日历后恢复监测。' };
 }

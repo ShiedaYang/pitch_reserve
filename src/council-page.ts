@@ -30,6 +30,6 @@ export async function councilUserPage(session: ProviderSession): Promise<Page | 
   }
   ranked.sort((a,b)=>b.progress-a.progress || Number(b.foreground)-Number(a.foreground));
   if (ranked[0]?.progress) { session.manualPage=ranked[0].page; return session.manualPage; }
-  if (session.manualPage && !session.manualPage.isClosed()) return session.manualPage;
+  if (session.manualPage && !session.manualPage.isClosed() && pages.includes(session.manualPage)) return session.manualPage;
   return pages[0];
 }
