@@ -1,7 +1,62 @@
+# Dependencies, runtime state and local caches
 node_modules/
-.local/
-test-results/
-*.log
+/.local/
+/.cache/
+/npm-cache/
+
+# Local environment and secrets (sanitized templates may be committed)
 .env
-.impeccable/mocks/
-.impeccable/review/
+.env.*
+!.env.example
+!.env.sample
+*.local.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Browser profiles, authentication and databases outside the default data folder
+/profiles/
+/sessions/
+/credentials/
+/secrets/
+/native-verification/
+/playwright/.auth/
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+
+# Generated reports, logs, screenshots and build outputs
+/test-results/
+/playwright-report/
+/blob-report/
+/coverage/
+/artifacts/
+/screenshots/
+/logs/
+/dist/
+/build/
+*.log
+*.log.*
+*.har
+*.trace.zip
+*.tsbuildinfo
+
+# Local design-tool records and one-off website debugging scripts
+/.impeccable/
+/scripts/debug/
+/scripts/diagnose-ggcb.ts
+
+# Editor and operating-system files
+/.vscode/
+/.idea/
+/.codex/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~

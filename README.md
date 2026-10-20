@@ -80,6 +80,8 @@ PlayFootball 在工具窗口反复要求人机验证、普通浏览器可以正�
 
 ## 开发与验证
 
+仓库保留运行源码、启动脚本、依赖锁文件、回归测试及项目文档。运行数据、账号与会话、数据库、环境配置、测试报告、截图、缓存、编辑器配置和 `.impeccable/` 工具记录均排除；前期一次性调试脚本 `scripts/debug/`、`scripts/diagnose-ggcb.ts` 只保留本地，不参与部署。正式界面验证脚本 `scripts/verify-console.ts` 仍保留。
+
 ```powershell
 npm run check
 npm test
