@@ -28,3 +28,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 Provider faults must be visible from any tab and link to account takeover; remote-browser links are optional deployment configuration. Feishu configuration includes separately enabled administrator recipients. Sent history offers an explicit resend action with independent historical receipts; interrupted resends expose delivery reconciliation. Existing tokens, tab structure and calendar priority remain unchanged.
 
 Accounts offer a scoped Restart browser action with disabled/loading states, preserving saved accounts and the previous pause/manual/automatic mode. The two PlayFootball venues share the same restart boundary.
+
+Preferences calculate dates from London tomorrow on every state poll. A native lookahead select defaults to two calendar months and offers one/two weeks or one/two/three months. Start/end inputs are readonly, and a concise helper explains daily rolling and pending edits. Existing workbench tokens and mobile stacking remain authoritative.
+
+PlayFootball adds an ordinary-browser verification action to its existing account row. The active state explains manual verification and closing that dedicated window before automatic recovery; it disables conflicting browser/login operations while leaving Pause and other providers available. Native controls, row wrapping and existing amber notices remain unchanged.

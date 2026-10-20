@@ -2,24 +2,46 @@
 
 运行时需要 Node.js 24+。Windows 默认使用已安装的 Edge；Linux 默认使用 Playwright Chromium，无 DISPLAY 时默认无界面运行。两者共用同一套 Node、SQLite 和网页代码。
 
-## Linux 安装与启动
+## 两端共用的启动与停止
 
-以下命令在项目目录以服务专用普通用户执行。安装系统依赖时可能需要 sudo；浏览器保持 Chromium sandbox 开启，不以 root 运行服务。
+需要 Node.js 24+。Linux 先安装依赖及 Chromium，使用普通服务用户运行：
 
 ```sh
 npm ci
 npx playwright install --with-deps chromium
-umask 077
-PITCH_HEADLESS=1 npm start
+sh start.sh
 ```
 
-默认监听 `127.0.0.1:4318`。从自己的电脑建立 SSH 隧道，再打开本地控制台：
+Windows 使用 `./start.ps1`，Linux 使用 `sh start.sh`；两者调用同一个 Node 启动入口，默认只监听本机 `127.0.0.1:4318`。可共用 `npm start`。运行期间退出或睡眠会停止监测。
+
+| 操作 | Windows PowerShell | Linux shell | 通用 npm |
+| --- | --- | --- | --- |
+| 默认本机启动 | `./start.ps1` | `sh start.sh` | `npm start` |
+| 局域网启动 | `./start.ps1 -Lan` | `sh start.sh --lan` | `npm start -- --lan` |
+| 强制仅本机 | `./start.ps1 -Local` | `sh start.sh --local` | `npm start -- --local` |
+| 正常停止 | `./stop.ps1` | `sh stop.sh` | `node scripts/stop-server.ts` |
+
+两端保留相同的账号保存、只读扫描、默认表单、通知队列、飞书发送、浏览器重启、人工接管及普通浏览器验证流程。显式命令行选项优先于 PITCH_HOST；无选项时读取 PITCH_HOST，未设置则仅本机。停止脚本读取服务数据目录内的 server.json，支持自定义 PORT；启动和停止时使用同一个 PITCH_DATA_DIR。
+
+## 仅局域网访问
+
+局域网模式监听 IPv4 的 0.0.0.0，并在启动日志打印本机地址、每个私有网卡的访问地址，以及允许的网段；不发送 mDNS/UDP 广播，不自动打开防火墙。其他设备使用日志中的 LAN access 地址访问。
+
+默认仅接受本机与服务器私有网卡所属网段的 TCP 对端，拒绝公网地址及其他私有网段。可用 PITCH_LAN_CIDRS 进一步明确允许的 IPv4 私有 CIDR，以逗号分隔，例如：
+
+```sh
+PITCH_LAN_CIDRS=192.168.1.0/24 sh start.sh --lan
+```
+
+公网 CIDR、0.0.0.0/0 和非法配置会拒绝启动。不会信任 X-Forwarded-For 来放宽来源检查。Host、Origin 与操作令牌校验仍保留；本机 IP 和局域网网卡 IP 自动进入 Host/Origin 白名单。若使用内部域名，可配置 PITCH_PUBLIC_ORIGIN 为对应完整 HTTP(S) 来源，不带路径。
+
+此控制台共享一套扫描账号和管理能力，允许访问的内网用户都属于可信使用者。防火墙应同样仅允许目标 LAN 网段访问该端口，且不要配置公网端口转发；反向代理会使后端看到代理地址，因此代理也必须限制来源。Ubuntu 可参考[官方防火墙说明](https://ubuntu.com/server/docs/how-to/security/firewalls/)。本程序不自动更改系统防火墙。
+
+如果仅需 SSH 隧道，继续使用默认本机模式：
 
 ```sh
 ssh -L 4318:127.0.0.1:4318 your-user@your-server
 ```
-
-浏览器安装及 Linux 有界面环境的要求参见 [Playwright 官方文档](https://playwright.dev/docs/browsers)及 [Linux CI 的 Xvfb 说明](https://playwright.dev/docs/ci#running-headed)。项目没有新增多用户认证；公网部署需要在反向代理提供 HTTPS 和访问认证，并保留后端的回环绑定。代理保留 Host，设置 `PITCH_PUBLIC_ORIGIN=https://你的控制台域名`；不要把未认证的控制台或浏览器桌面直接公开。
 
 ## 人机验证与人工接管
 
@@ -37,6 +59,8 @@ noVNC 必须连接到这个 DISPLAY，并限制在回环接口或认证代理后
 ssh -L 4318:127.0.0.1:4318 -L 6080:127.0.0.1:6080 your-user@your-server
 ```
 
+局域网用户接管时，PITCH_MANUAL_BROWSER_URL 必须填服务器可达的局域网地址或受保护的内部代理地址，不能填访问者自己的 127.0.0.1。
+
 “账号与接管”和故障提示中的“打开远程浏览器”是配置好的 noVNC 链接，在访问者的浏览器打开。官网正常预订链接仍直接在访问者浏览器打开，与扫描会话分开。官网验证完成后，无操作一分钟会自动检查并恢复监测；验证仍在或页面仍不可读取时保持接管。不要把 `PITCH_MANUAL_BROWSER_URL` 填成普通官网 URL，普通官网标签页不共享服务器的扫描会话。
 
 ## 配置与持久化
@@ -44,6 +68,9 @@ ssh -L 4318:127.0.0.1:4318 -L 6080:127.0.0.1:6080 your-user@your-server
 | 环境变量 | 默认与用途 |
 | --- | --- |
 | `PORT` | `4318` |
+| `PITCH_HOST` | `127.0.0.1`；显式局域网模式为 `0.0.0.0`，也可绑定本机私有 IPv4 |
+| `PITCH_LAN_CIDRS` | 默认私有网卡所属网段；可用逗号分隔的私有 IPv4 CIDR 限制访问 |
+| `PITCH_BROWSER_EXECUTABLE` | 可选，普通人工验证和自动扫描共用的浏览器可执行文件路径 |
 | `PITCH_DATA_DIR` | 项目内 `.local`；可设为服务用户可写的持久目录 |
 | `PITCH_HEADLESS` | Windows 默认 `0`；Linux 无 DISPLAY 默认 `1`；显式 `0/1` 可覆盖 |
 | `PITCH_BROWSER_CHANNEL` | Windows `msedge`；Linux 默认随 Playwright 安装的 Chromium；可指定 `chrome`、`msedge` 或 `chromium` |
@@ -58,7 +85,7 @@ Windows 的 DPAPI 密文不能直接在 Linux 解密。迁移时停止旧服务�
 
 ## systemd 示例
 
-先用服务用户安装依赖与 Chromium，并创建可写数据目录。按实际 Node 路径、项目路径和服务用户修改：
+先用服务用户安装依赖与 Chromium，并创建可写数据目录。按实际 Node 路径、项目路径、服务用户及局域网网段修改（下面的 192.168.1.0/24 只是示例）：
 
 ```ini
 [Unit]
@@ -71,9 +98,11 @@ Type=simple
 User=pitchreserve
 WorkingDirectory=/srv/pitch_reserve
 Environment=PORT=4318
+Environment=PITCH_HOST=0.0.0.0
+Environment=PITCH_LAN_CIDRS=192.168.1.0/24
 Environment=PITCH_DATA_DIR=/var/lib/pitch_reserve
 Environment=PITCH_HEADLESS=1
-ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning src/server.ts
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning scripts/start-server.ts
 Restart=on-failure
 RestartSec=10
 TimeoutStopSec=120
@@ -94,3 +123,11 @@ node scripts/verify-console.ts
 ```
 
 最后一项需要控制台已启动；所有发送和配置操作均使用模拟响应。GitHub Actions 的 Windows/Ubuntu 矩阵安装 Chromium 并运行类型检查及测试；矩阵配置本身不代表远端 CI 已运行成功。
+
+## PlayFootball 普通浏览器验证
+
+当自动化浏览器中的 Cloudflare 验证循环、普通浏览器却可正常使用时，控制台账号页提供“普通浏览器验证”。需要 Linux 图形桌面、DISPLAY，以及可访问该桌面的远程会话。验证阶段关闭该网站 Playwright 后，使用同一专用 profile 启动普通 Chromium；不连接自动化或调试协议。人工验证进入日历后关闭专用窗口，空闲检测会接回只读监测。`PITCH_BROWSER_EXECUTABLE` 可为普通验证与自动扫描指定同一浏览器可执行文件。无 DISPLAY 时会明确提示先配置图形桌面，不在无头窗口中重试验证。
+
+`.local/native-verification/playfootball.json` 只记录工具启动的验证进程 ID，避免服务重启后同时占用 profile；程序不会根据该文件杀进程。服务重启时验证窗口可继续保留，关闭后再自动接回；主动暂停不会被覆盖。官网仍可能拒绝接回后的自动化，此时继续人工接管，需要场馆支持的接入方式。
+
+进程保护以验证窗口实际存活为前提。systemd 等管理器可能在停止服务时一并结束子进程，建议先完成人工验证再重启服务；程序下次启动会在验证进程已结束后接回监测，不会尝试控制已经退出的窗口。

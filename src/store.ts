@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { initialPolicy, normalizeScanResult, resources } from './domain.ts';
+import { initialPolicy, normalizeScanResult, resolvePolicy, resources } from './domain.ts';
 import type { Policy, Resource, ScanResult } from './domain.ts';
 import {parseCouncilDefaults} from './council-defaults.ts';
 import { NotificationQueue } from './notifications.ts';
@@ -24,12 +24,16 @@ export class Store {
     try{for(const resource of resources){const latest=this.latest(resource.id);if(latest)this.notifications.observe(resource,latest.result,this.policy(),latest.at);}this.db.exec('COMMIT');}
     catch(error){this.db.exec('ROLLBACK');throw error;}
   }
-  policy(): Policy {
+  policy(now = new Date()): Policy {
     const row = this.db.prepare('SELECT value FROM config WHERE key=?').get('policy') as { value: string } | undefined;
-    return row ? { ...JSON.parse(row.value), autoHold: false } : this.savePolicy(initialPolicy());
+    if (!row) return this.savePolicy(initialPolicy(now), now);
+    const stored: Policy = JSON.parse(row.value);
+    // Upgrade the old frozen date range once, preserving the monitoring interval.
+    if (!Object.hasOwn(stored, 'lookahead')) return this.savePolicy({ ...stored, lookahead: '2m' }, now);
+    return resolvePolicy(stored, now);
   }
-  savePolicy(policy: Policy): Policy {
-    const safe = { ...policy, autoHold: false as const };
+  savePolicy(policy: Policy, now = new Date()): Policy {
+    const safe = resolvePolicy({ ...policy, lookahead: policy.lookahead ?? null, autoHold: false }, now);
     this.db.prepare('INSERT OR REPLACE INTO config VALUES (?,?)').run('policy', JSON.stringify(safe)); return safe;
   }
   councilDefaults() {const row=this.db.prepare('SELECT value FROM config WHERE key=?').get('council-defaults') as {value:string}|undefined;return row?parseCouncilDefaults(JSON.parse(row.value)):null;}

@@ -2,7 +2,8 @@ import { chromium } from 'playwright';
 import type { BrowserContext, Page } from 'playwright';
 import { mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { loginUrls } from './domain.ts';
+import { loginUrls,resources } from './domain.ts';
+import {NativeVerification,verificationBrowser} from './native-verification.ts';
 import { councilUserPage } from './council-page.ts';
 import {parseCredentials} from './auth.ts';
 import {loadAuth} from './auth-runtime.ts';
@@ -26,16 +27,29 @@ export class ProviderSession {
   lastManualActivityAt=0;
   nextIdleCheckAt=0;
   needsHumanVerification=false;
+  nativeVerification:NativeVerification;
+  private verifiedPage?:Page;
   attention?:{kind:'TIMEOUT'|'HUMAN_VERIFICATION';message:string;at:string};
   get mode(){return this.#mode;}
   set mode(value:Mode){this.modeRevision++;if(value==='MANUAL_CONTROL'&&this.#mode!==value){this.lastManualActivityAt=Date.now();this.nextIdleCheckAt=0;}this.#mode=value;}
   recordManualActivity(now=Date.now()){if(this.mode==='MANUAL_CONTROL'){this.lastManualActivityAt=now;this.nextIdleCheckAt=0;}}
   manualIdle(now=Date.now()){return this.mode==='MANUAL_CONTROL'&&!this.job&&now-this.lastManualActivityAt>=60000&&now>=this.nextIdleCheckAt;}
   async resumeAfterInactivity(now=Date.now()){
+    if(this.nativeVerification.active)return false;
     if(!this.manualIdle(now))return false;
     const activity=this.lastManualActivityAt;this.nextIdleCheckAt=now+60000;
+    if(this.nativeVerification.pending){
+      try{await this.exclusive(async()=>{
+        const context=await this.getContext();if(this.mode!=='MANUAL_CONTROL')throw new Interrupted();
+        const resource=resources.find(row=>row.provider===this.id)!;const page=await context.newPage();this.manualPage=page;this.pages.set(resource.id,page);this.nativeVerification.clear();
+        await page.goto(resource.url,{waitUntil:'domcontentloaded'});
+        await page.locator('.bookings-calendar,.booking-slot').first().waitFor({state:'visible',timeout:12000}).catch(()=>{});
+      });}catch{return false;}
+    }
+    const wasChallenge=this.needsHumanVerification;
     try{await this.check();}catch{return false;}
     if(this.mode!=='MANUAL_CONTROL'||this.lastManualActivityAt!==activity||this.needsHumanVerification||this.attention&&this.status==='UNKNOWN'||this.status==='LOGIN_REQUIRED'&&!(this.hasCredentials&&this.automaticLoginAllowed))return false;
+    if(wasChallenge&&this.id==='playfootball'&&this.manualPage){this.verifiedPage=this.manualPage;await this.saveSession();}
     this.attention=undefined;this.mode='AUTOMATION';this.nextScanAt=0;return true;
   }
   status: SessionStatus = 'UNKNOWN';
@@ -108,7 +122,7 @@ export class ProviderSession {
       return this.loginResult={kind:'FAILED',message:'自动登录未完成，请在专用浏览器检查页面后重试。'};
     }
   }
-  constructor(id: ProviderId, root: string, vault?:CredentialVault) { this.id = id; this.root = root;this.vault=vault; }
+  constructor(id: ProviderId, root: string, vault?:CredentialVault) { this.id = id; this.root = root;this.vault=vault;this.nativeVerification=new NativeVerification(root,id);if(this.nativeVerification.pending){this.mode='MANUAL_CONTROL';this.needsHumanVerification=true;this.attention={kind:'HUMAN_VERIFICATION',message:'普通浏览器验证中：请完成验证并关闭该专用窗口，随后自动接回只读监测。',at:new Date().toISOString()};} }
   async trackManualActivity(context:BrowserContext){
     await context.exposeBinding('__pitchManualActivity',()=>this.recordManualActivity());
     const install=()=>{
@@ -129,6 +143,7 @@ export class ProviderSession {
     try { return await pending; } finally { if (this.job === pending) this.job = undefined; }
   }
   async getContext(): Promise<BrowserContext> {
+    if(this.nativeVerification.active)throw new Error('请先关闭普通浏览器验证窗口，再操作此网站。');
     if (this.context) return this.context;
     if (!this.opening) this.opening = (async () => {
       const profile = join(this.root, 'profiles', this.id); mkdirSync(profile, { recursive: true });
@@ -144,7 +159,11 @@ export class ProviderSession {
       if (existsSync(authFile)) {
         const saved = JSON.parse(readFileSync(authFile, 'utf8'));
         // Persistent profiles retain origin storage; this also restores unexpired session cookies.
-        if (Array.isArray(saved.cookies)) await context.addCookies(saved.cookies);
+        if (Array.isArray(saved.cookies)) {
+          const existing=await context.cookies();const key=(cookie:{name:string;domain:string;path:string;partitionKey?:string})=>JSON.stringify([cookie.name,cookie.domain,cookie.path,cookie.partitionKey??'']);const current=new Set(existing.map(key));
+          const missing=saved.cookies.filter((cookie:any)=>!current.has(key(cookie))&&(cookie.expires===-1||cookie.expires>Date.now()/1000)&&!/^cf_|^__cf|^_cfuvid$/i.test(cookie.name));
+          if(missing.length)await context.addCookies(missing);
+        }
       }
       context.on('close', () => { if(this.context!==context)return;this.context = undefined; this.pages.clear(); this.manualPage = undefined; this.loginPage=undefined; this.status = 'UNKNOWN'; this.needsHumanVerification=false;if(this.mode!=='PAUSED'&&!this.restarting){this.mode='AUTOMATION';this.nextScanAt=Date.now()+1000;} });
       this.context = context; return context;
@@ -153,6 +172,7 @@ export class ProviderSession {
   }
   async page(resource: Resource): Promise<Page> {
     this.assertAutomatic();
+    if(this.verifiedPage&&!this.verifiedPage.isClosed()&&this.verifiedPage.url()===resource.url){const page=this.verifiedPage;this.verifiedPage=undefined;this.pages.set(resource.id,page);return page;}
     if (resource.provider === 'council') {
       const current = await councilUserPage(this); this.assertAutomatic();
       if (current) return current;
@@ -167,6 +187,22 @@ export class ProviderSession {
     this.assertAutomatic();const current=resource.provider==='council'?await councilUserPage(this):this.pages.get(resource.id);
     if(current&&!current.isClosed()){if(this.manualPage===current)this.manualPage=undefined;if(this.loginPage===current)this.loginPage=undefined;for(const [key,page] of this.pages)if(page===current)this.pages.delete(key);await current.close();}
     this.assertAutomatic();
+  }
+  async verifyInBrowser(){
+    if(this.id!=='playfootball')throw new Error('普通浏览器验证目前仅用于 PlayFootball。');
+    if(this.restarting||this.nativeVerification.active)throw new Error('请先关闭普通浏览器验证窗口，再操作此网站。');
+    verificationBrowser(); // Validate before closing the current browser.
+    const previousJob=this.job;this.restarting=true;this.mode='PAUSED';const revision=this.modeRevision;
+    const work=Promise.resolve().then(async()=>{
+      await this.opening?.catch(()=>{});await this.saveSession();await this.context?.close();await previousJob?.catch(()=>{});
+      if(this.modeRevision!==revision)throw new Interrupted('已暂停，等待人工接管');
+      this.context=undefined;this.pages.clear();this.manualPage=undefined;this.loginPage=undefined;this.verifiedPage=undefined;
+      await this.nativeVerification.open(join(this.root,'profiles',this.id),resources.find(row=>row.provider===this.id)!.url);
+      if(this.modeRevision===revision)this.mode='MANUAL_CONTROL';
+      this.needsHumanVerification=true;this.status='UNKNOWN';this.attention={kind:'HUMAN_VERIFICATION',message:'普通浏览器验证中：请完成验证并关闭该专用窗口，随后自动接回只读监测。',at:new Date().toISOString()};this.recordManualActivity();
+    });this.job=work;
+    try{await work;}catch(error){if(this.modeRevision===revision)this.mode='MANUAL_CONTROL';throw error;}
+    finally{if(this.job===work)this.job=undefined;this.restarting=false;}
   }
   async restartBrowser(resource:Resource){
     if(this.restarting)throw new Error('该网站浏览器正在重启，请稍后再试');
@@ -214,6 +250,7 @@ export class ProviderSession {
     });
   }
   async check(): Promise<SessionStatus> {
+    if(this.nativeVerification.active)return this.status;
     return this.exclusive(async () => {
       const {authSignals}=await loadAuth();
       const page = this.id==='council'?(await councilUserPage(this)??this.manualPage):(this.manualPage??[...this.pages.values()].find(page=>!page.isClosed()));
@@ -223,7 +260,8 @@ export class ProviderSession {
       this.needsHumanVerification=signals.challenge;
       const readable=!signals.challenge&&await page.locator('#booking_day_selector:visible,#time_selector:visible,.bookings-calendar:visible,.bookings-calendar-date:visible,.booking-slot:visible,[data-date]:visible,.booking-calendar:visible').count()>0;
       this.status = signals.password ? 'LOGIN_REQUIRED' : signals.authenticated ? 'AUTHENTICATED' : readable?'ANONYMOUS_READABLE':'UNKNOWN';
-      if (this.status === 'AUTHENTICATED') {this.automaticLoginAllowed=this.hasCredentials;await this.saveSession();}
+      if (this.status === 'AUTHENTICATED') this.automaticLoginAllowed=this.hasCredentials;
+      if(this.status==='AUTHENTICATED'||this.status==='ANONYMOUS_READABLE')await this.saveSession();
       return this.status;
     });
   }

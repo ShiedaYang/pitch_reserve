@@ -13,7 +13,9 @@ export const loginUrls: Record<ProviderId, string> = {
   council: 'https://towerhamlets-self.achieveservice.com/login?return_url=%2FRenderAchieveForms&lang=en&appName=Self',
   playfootball: 'https://partners.playfootball.net/Login'
 };
-export interface Policy { dateFrom: string; dateTo: string; timezone: string; intervalMinutes: number; autoHold: false; }
+export const lookaheads = ['7d', '14d', '1m', '2m', '3m'] as const;
+export type Lookahead = typeof lookaheads[number];
+export interface Policy { dateFrom: string; dateTo: string; timezone: string; intervalMinutes: number; autoHold: false; lookahead?: Lookahead | null; }
 export interface Observation { resourceId: string; date: string; start: string; duration: number | null; availability: Availability; price: string | null; note: string; bookingUrl?:string; priceNote?:string; }
 export interface Coverage { date: string; status: 'READ' | 'UNKNOWN' | 'OUTSIDE_RELEASE_WINDOW'; note: string; }
 export interface ScanResult {
@@ -43,12 +45,20 @@ export function targetDates(policy: Policy, today = londonDate(), now = new Date
   }
   return result;
 }
-export function initialPolicy(): Policy {
-  const dateFrom = londonDate();
-  const d = new Date(`${dateFrom}T12:00:00Z`); const day = d.getUTCDate();
-  d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + 3); d.setUTCDate(0);
-  const maxDay = d.getUTCDate(); d.setUTCDate(Math.min(day, maxDay));
-  return { dateFrom, dateTo: d.toISOString().slice(0, 10), timezone: 'Europe/London', intervalMinutes: 15, autoHold: false };
+export function lookaheadEnd(today: string, lookahead: Lookahead): string {
+  if (lookahead === '7d' || lookahead === '14d') return addDays(today, lookahead === '7d' ? 7 : 14);
+  const d = new Date(`${today}T12:00:00Z`); const day = d.getUTCDate();
+  d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + Number(lookahead[0]));
+  const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, lastDay)); return d.toISOString().slice(0, 10);
+}
+export function resolvePolicy(policy: Policy, now = new Date()): Policy {
+  if (!policy.lookahead) return { ...policy, autoHold: false };
+  const dateFrom = addDays(londonDate(now), 1);
+  return { ...policy, dateFrom, dateTo: lookaheadEnd(dateFrom, policy.lookahead), timezone: 'Europe/London', autoHold: false };
+}
+export function initialPolicy(now = new Date()): Policy {
+  return resolvePolicy({ dateFrom: londonDate(now), dateTo: londonDate(now), lookahead: '2m', timezone: 'Europe/London', intervalMinutes: 15, autoHold: false }, now);
 }
 export function isCandidate(item: Observation): boolean {
   return item.availability === 'AVAILABLE' && item.start === '18:00' && item.duration !== null && item.duration >= 55 && item.duration <= 60;

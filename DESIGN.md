@@ -180,6 +180,8 @@ Controls and observation cells have modest rounded corners using `control`; grou
 
 ## Components
 
+PlayFootball's existing account action row includes Ordinary browser verification. While the human-owned window is open, the button reads “普通浏览器验证中”, conflicting browser actions and login submission are disabled, and the attention message asks the user to verify then close that dedicated window. Pause remains available; other provider controls stay usable. Reuse the same wrapping button row and amber operational notice, with no new tokens.
+
 ### Buttons
 
 Primary buttons carry muted blue with white text and a deeper blue hover. Secondary buttons are white with slate text and a cool outline, gaining a pale blue hover. Both have a minimum height (40px). Disabled buttons use a muted gray fill, slate text and a default cursor; preserve the disabled state during pending work. Text actions use blue text, no border and an underline on hover, with minimum height (36px). Keep visible keyboard focus for every variant.
@@ -233,3 +235,5 @@ Feishu settings live in a collapsed disclosure at the top of the notification li
 Operational recovery: an amber global notice names the affected provider, explains manual verification and links to the Accounts tab. Administrator targets remain in the existing Feishu disclosure; resend actions and their history remain aligned with each notification. No new palette or layout system.
 
 Accounts keep Restart browser beside the existing provider actions, with an immediate disabled “正在重启…” state. The operation affects only that provider browser; account preservation and previous pause/manual mode are explained in the recovery path. No new visual tokens.
+
+Monitoring preferences use the existing native select for lookahead (1 week, 2 weeks, 1 month, default 2 months, 3 months). Readonly date inputs show tomorrow in London and the calculated end date, updated by polling as the London date changes. Saving applies the lookahead and interval; polling preserves unfinished edits. The helper explains daily rolling and unsaved changes. Existing spacing, colors, type and mobile date-field stacking remain unchanged; no new design tokens.

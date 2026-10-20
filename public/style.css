@@ -65,6 +65,8 @@ small { font-size: 12px; color: var(--muted); }
 .brand-icon { width: 32px; height: 32px; stroke: var(--blue); stroke-width: 1.6; }
 .header-status { display: flex; align-items: center; gap: 20px; font-size: 12px; color: var(--muted); }
 .readonly { background: var(--blue-soft); color: var(--blue); padding: 5px 11px; border-radius: 5px; }
+#policy-form .form-help { color: var(--muted); margin: -10px 0 0; font-size: 13px; line-height: 1.6; }
+#policy-form input[readonly] { background: var(--ground); cursor: default; }
 .tabs { display: flex; gap: 30px; }
 .tabs button { position: relative; padding: 12px 1px 14px; min-height: 49px; border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: 14px; white-space: nowrap; }
 .tabs button:hover { color: var(--blue); }

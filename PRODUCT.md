@@ -12,11 +12,11 @@ A single local user arranging an evening football game in London. The user has c
 
 ## Product Purpose
 
-Monitor four ordinary pitch-hire entries for Monday–Thursday sessions starting at 18:00, within a two-month range, with a preference for one booking per week across all venues.
+Monitor four ordinary pitch-hire entries for Monday–Thursday sessions starting at 18:00, by default from tomorrow in London through two calendar months later, with a preference for one booking per week across all venues. The date range rolls daily; users can choose one/two weeks or one/two/three months ahead.
 
 ## Operating Context
 
-A lightweight Windows/Linux console at 127.0.0.1:4318, backed by Node.js, Playwright, SQLite and three separate browser/account groups. GGCB and Tower Hamlets have separate accounts; the two PlayFootball venues share one account.
+A lightweight Windows/Linux console, local-only by default at 127.0.0.1:4318 with explicit subnet-restricted LAN startup, backed by Node.js, Playwright, SQLite and three separate browser/account groups. GGCB and Tower Hamlets have separate accounts; the two PlayFootball venues share one account.
 
 ## Capabilities and Constraints
 
@@ -51,3 +51,5 @@ The running local console, repository adapters, README.md, docs/website-validati
 Feishu configuration belongs to the Notifications tab. Individual pending/failed notifications support explicit manual delivery to saved enabled recipients, independently of the automatic-delivery switch, with the same freshness, expiry and dedupe protections.
 
 Recovery closes and reopens a timed-out resource tab once; a repeated timeout or human verification requests manual takeover visibly. Feishu has independent administrator recipients and persistent incident dedupe; explicit resends preserve original receipts and label historical inventory. Linux supports Chromium, AES-GCM secret storage and an optional protected remote-desktop link for manual verification.
+
+For PlayFootball challenge loops, an explicit ordinary-browser verification action closes the scanner and opens its dedicated profile without an automation connection. The human verifies and closes that window; idle recovery then reconnects read-only monitoring. A process marker protects that profile across service restarts, and explicit pause still wins. This is a human handoff, not a promise that the venue accepts resumed automation.

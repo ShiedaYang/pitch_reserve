@@ -1,5 +1,5 @@
 import { ProviderSession, Interrupted } from './browser.ts';
-import { providerIds, resources, targetDates } from './domain.ts';
+import { londonDate, providerIds, resources, targetDates } from './domain.ts';
 import type { ProviderId, Resource, ScanResult } from './domain.ts';
 import { statSync } from 'node:fs';
 import type { Store } from './store.ts';
@@ -12,14 +12,15 @@ export class Monitor {
   sessions: Map<ProviderId, ProviderSession>;
   timer?: NodeJS.Timeout;
   stopping = false;
+  private lastWindow?: string;
   constructor(store: Store, root: string, persistCredentials=false) { this.store = store; const vault=persistCredentials?new CredentialVault(root):undefined;this.sessions = new Map(providerIds.map(id => [id, new ProviderSession(id, root,vault)])); }
   async restoreCredentials(){await Promise.all([...this.sessions.values()].map(session=>session.restoreCredentials()));}
   state() {
     const policy = this.store.policy();
     this.store.notifications.expire(policy);
-    return { policy,notifications:{...this.store.notifications.list(),summary:this.store.notifications.summary(),deliveryConfigured:false},councilDefaults:this.store.councilDefaults(), readOnly: true, providers: providerIds.map(id => {
+    return { today:londonDate(),policy,notifications:{...this.store.notifications.list(),summary:this.store.notifications.summary(),deliveryConfigured:false},councilDefaults:this.store.councilDefaults(), readOnly: true, providers: providerIds.map(id => {
       const s = this.sessions.get(id)!;
-      return { id, mode: s.mode, session: s.status, busy: !!s.job,restarting:s.restarting,attention:s.attention??null,manualBrowserUrl:manualBrowserUrl(),headless:browserOptions().headless,autoResumeAt:s.mode==='MANUAL_CONTROL'?new Date(Math.max(s.lastManualActivityAt+60000,s.nextIdleCheckAt)).toISOString():null, nextScanAt: s.nextScanAt ? new Date(s.nextScanAt).toISOString() : null, browserOpen: !!s.context,hasCredentials:s.hasCredentials,hasSavedCredentials:s.hasSavedCredentials,savedUsername:s.savedUsername??null,credentialError:s.credentialError,automaticLoginAllowed:s.automaticLoginAllowed,loginResult:s.loginResult };
+      return { id, mode: s.mode, session: s.status, busy: !!s.job,restarting:s.restarting,nativeVerificationActive:s.nativeVerification.active,attention:s.attention??null,manualBrowserUrl:manualBrowserUrl(),headless:browserOptions().headless,autoResumeAt:s.mode==='MANUAL_CONTROL'&&!s.nativeVerification.active?new Date(Math.max(s.lastManualActivityAt+60000,s.nextIdleCheckAt)).toISOString():null, nextScanAt: s.nextScanAt ? new Date(s.nextScanAt).toISOString() : null, browserOpen: !!s.context||s.nativeVerification.active,hasCredentials:s.hasCredentials,hasSavedCredentials:s.hasSavedCredentials,savedUsername:s.savedUsername??null,credentialError:s.credentialError,automaticLoginAllowed:s.automaticLoginAllowed,loginResult:s.loginResult };
     }),incidents:this.store.incidents.list(), resources: resources.map(resource => ({ ...resource, latest: this.store.latest(resource.id) })), events: this.store.events() };
   }
   start() {
@@ -27,7 +28,15 @@ export class Monitor {
     void this.tick();
   }
   async tick() {
-    if (this.stopping || !targetDates(this.store.policy()).length) return;
+    if (this.stopping) return;
+    const policy = this.store.policy();
+    const window = `${policy.dateFrom}/${policy.dateTo}/${policy.lookahead ?? ''}`;
+    if (this.lastWindow && this.lastWindow !== window) {
+      for (const s of this.sessions.values()) if (s.mode === 'AUTOMATION') s.nextScanAt = 0;
+      this.store.event(`监测范围已更新：${policy.dateFrom} 至 ${policy.dateTo}`);
+    }
+    this.lastWindow = window;
+    if (!targetDates(policy).length) return;
     await Promise.allSettled(providerIds.map(async id => {
       const s = this.sessions.get(id)!;
       if(await s.resumeAfterInactivity())this.store.event(`${id}：用户1分钟无操作，已自动恢复只读监测`);
@@ -100,7 +109,7 @@ export class Monitor {
     this.store.saveScan(resource, result); this.store.event(`${resource.name}：${result.summary}`);
   }
   async automaticLogin(id:ProviderId,input:unknown,retry=false) {
-    const session=this.sessions.get(id)!;if(session.restarting)throw new Error('该网站浏览器正在重启，请稍后再试');const result=await (retry?session.retrySignIn():session.signIn(input));
+    const session=this.sessions.get(id)!;if(session.nativeVerification.active)throw new Error('请先关闭普通浏览器验证窗口，再操作此网站。');if(session.restarting)throw new Error('该网站浏览器正在重启，请稍后再试');const result=await (retry?session.retrySignIn():session.signIn(input));
     this.store.event(`${id}：${result.message}`);
     if(result.kind==='AUTHENTICATED' || result.kind==='CURRENT_SESSION') {
       session.mode='AUTOMATION';session.nextScanAt=0;void this.scan(id).catch(()=>{});
@@ -127,7 +136,9 @@ export class Monitor {
   }
   async action(id: ProviderId, action: string, resourceId?: string) {
     const s = this.sessions.get(id)!;
+    if(s.nativeVerification.active&&action!=='pause')throw new Error('请先关闭普通浏览器验证窗口，再操作此网站。');
     if(s.restarting&&action!=='pause')throw new Error('该网站浏览器正在重启，请稍后再试');
+    if(action==='verify-in-browser'){await s.verifyInBrowser();this.store.event('PlayFootball：已切换普通浏览器人工验证，关闭该窗口后自动接回只读监测');return {message:'已打开普通浏览器专用窗口。请手动完成验证，确认进入日历后关闭该窗口；随后自动接回只读监测。'};}
     if(action==='restart'){
       const resource=resources.find(resource=>resource.provider===id)!;
       this.store.event(`${id}：正在关闭并重启该网站浏览器`);
@@ -146,6 +157,7 @@ export class Monitor {
     } else if (action === 'pause') { s.mode = 'PAUSED'; await s.job?.catch(() => {}); this.store.event(`${id}：监测已暂停`); }
     else if (action === 'check') { s.recordManualActivity();await s.check(); this.store.event(`${id}：会话检测 ${s.status}`); }
     else if (action === 'resume') {
+      if(s.nativeVerification.pending){s.mode='MANUAL_CONTROL';s.lastManualActivityAt=Date.now()-60001;s.nextIdleCheckAt=0;await s.resumeAfterInactivity();}
       await s.check();
       if(s.needsHumanVerification)throw new Error('官网仍需人机验证，请手动完成后等待自动检测');
       if (s.status === 'LOGIN_REQUIRED') throw new Error('页面仍显示登录表单，请先在官网完成登录');

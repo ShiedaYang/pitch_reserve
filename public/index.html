@@ -50,8 +50,8 @@
       <div id="providers" class="providers"></div>
     </section>
     <section id="view-settings" class="view" role="tabpanel" aria-labelledby="tab-settings" hidden>
-      <div class="page-heading"><div><h1>监测偏好</h1><p>设置日期范围与检查频率。</p></div></div>
-      <section class="settings-panel"><h2>日期与频率</h2><p>周一至周四，18:00 开始、19:00 前结束，按伦敦当地时间读取。</p><form id="policy-form"><div class="date-fields"><label>开始日期<input type="date" id="date-from" required></label><label>结束日期<input type="date" id="date-to" required></label></div><label>检查间隔<select id="interval"><option value="10">10分钟</option><option value="15">15分钟</option><option value="30">30分钟</option><option value="60">60分钟</option><option value="120">120分钟</option></select></label><div><button type="submit" class="primary">保存偏好</button></div></form></section>
+      <div class="page-heading"><div><h1>监测偏好</h1><p>每天自动从伦敦明天开始查询。</p></div></div>
+      <section class="settings-panel"><h2>日期与频率</h2><p>周一至周四，18:00 开始、19:00 前结束，按伦敦当地时间读取。</p><form id="policy-form"><label>往后查多久<select id="lookahead" aria-describedby="policy-range-help"><option value="7d">1周</option><option value="14d">2周</option><option value="1m">1个月</option><option value="2m" selected>2个月（默认）</option><option value="3m">3个月</option></select></label><div class="date-fields"><label>开始日期 · 明天<input type="date" id="date-from" readonly></label><label>结束日期 · 自动计算<input type="date" id="date-to" readonly></label></div><p id="policy-range-help" class="form-help">从伦敦明天开始，日期每日自动顺延，无需重新保存。</p><label>检查间隔<select id="interval"><option value="10">10分钟</option><option value="15">15分钟</option><option value="30">30分钟</option><option value="60">60分钟</option><option value="120">120分钟</option></select></label><div><button type="submit" id="policy-save" class="primary">保存偏好</button></div></form></section>
       <section class="settings-note"><h2>当前预订规则</h2><p>四个场地合计每周最多一场，普通单次租场。GGCB 实际为 55 分钟，时长偏好仍待确认。</p><p>自动锁位关闭。控制台只读取场次信息，付款由你在官网完成。</p></section>
 
     </section>
