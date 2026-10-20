@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import {mkdirSync,writeFileSync} from 'node:fs';
-const browser=await chromium.launch({channel:'msedge',headless:true,chromiumSandbox:true,timeout:30000});
+const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true,timeout:30000});
 try {
   const page=await browser.newPage({locale:'en-GB',timezoneId:'Europe/London'});
   const http:Array<{status?:number;path:string;action:string}>=[];const errors:string[]=[];

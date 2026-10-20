@@ -12,8 +12,9 @@ test('Council date labels validate the weekday and cross the year boundary',()=>
   assert.throws(()=>councilDate('19 Oct','Tue','2026-10-15'));
 });
 
-test('Council reads date pages through an empty carousel transition without selecting or confirming times',async()=>{
-  const browser=await chromium.launch({channel:'msedge',headless:true,chromiumSandbox:true,timeout:30000});
+test('Council reads date pages through an empty carousel transition without selecting or confirming times',async t=>{
+  t.mock.timers.enable({apis:['Date'],now:new Date('2026-10-16T11:00:00Z')});
+  const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true,timeout:30000});
   try {
     const page=await browser.newPage(); await page.setContent('<iframe></iframe>'); const form=page.frames()[1];
     await form.setContent(`<input id="bookingLocation" value="Stepney Green Third"><input id="duration" value="19"><input id="granularity" value="20">
@@ -24,7 +25,7 @@ test('Council reads date pages through an empty carousel transition without sele
         function render(){const wrap=document.querySelector('.carousel-inner');wrap.innerHTML='<div class="carousel-item active"><div id="week-cal"></div></div>';const days=document.getElementById('week-cal');for(let i=0;i<6;i++){const d=new Date(Date.UTC(2026,9,16+group*6+i));const label=d.getUTCDate()+' Oct';const el=document.createElement('div');el.className='bds-day';el.innerHTML='<span class="day">'+['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getUTCDay()]+'</span><span class="date">'+label+'</span>';el.onclick=()=>showTimes(label);days.append(el);}}
         function move(delta){group=Math.max(0,Math.min(1,group+delta));document.querySelector('.carousel-inner').innerHTML='';setTimeout(render,100);}
         function showTimes(label){document.getElementById('booking_day_selector').hidden=true;const time=document.getElementById('time_selector');time.hidden=false;time.querySelector('h3').textContent='Select a time on '+label;time.querySelector('ul').innerHTML='<li class="availability-'+(label==='20 Oct'?'unavailable':'available')+'"><a class="select-time" href="#" onclick="event.preventDefault();window.selected++">18:00<span>available</span><span hidden>unavailable</span></a><div hidden><a class="confirm" href="#" onclick="window.confirmed++">Confirm 18:00</a></div></li>';}
-        render();
+        setTimeout(render,100);
       </script>`);
     const session=new ProviderSession('council','.local/test-unused');
     const policy={...initialPolicy(),dateFrom:'2026-10-19',dateTo:'2026-10-27'};

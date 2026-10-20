@@ -25,7 +25,7 @@ function fixture(rule:boolean) {return `<p>${rule?'The dates for the following m
   render();</script>`;}
 
 test('GGCB recovers a failed month request, correlates day responses and quotes without selecting or ordering',async()=>{
-  const browser=await chromium.launch({channel:'msedge',headless:true,chromiumSandbox:true,timeout:30000});
+  const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true,timeout:30000});
   try {
     const context=await browser.newContext();let monthRequests=0;let quotes=0;const actions:string[]=[];
     await context.route('**/*',async route=>{
@@ -54,7 +54,7 @@ test('GGCB recovers a failed month request, correlates day responses and quotes 
 });
 
 test('GGCB does not navigate or query slots in months the official page has not released',async()=>{
-  const browser=await chromium.launch({channel:'msedge',headless:true,chromiumSandbox:true,timeout:30000});
+  const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true,timeout:30000});
   try {
     const page=await browser.newPage();let queries=0;
     await page.route('**/*',route=>{if(route.request().method()==='POST'||new URL(route.request().url()).searchParams.has('wc-ajax'))queries++;return route.fulfill({contentType:'text/html',body:fixture(true)});});

@@ -2,6 +2,7 @@ import type {Frame,Page} from 'playwright';
 import type {CouncilDefaults} from './council-defaults.ts';
 import type {ProviderSession} from './browser.ts';
 import {statSync} from 'node:fs';
+import {Interrupted} from './browser.ts';
 
 const normalized=(value:string)=>value.replace(/[–—]/g,'-').replace(/\s+/g,' ').trim();
 async function stage(frame:Frame) {
@@ -46,17 +47,18 @@ async function openingHours(form:Frame,label:string,assertControl:()=>void) {
   throw new Error('未能确认官网开放时段类别，保持人工接管');
 }
 
-export async function prepareCouncil(page:Page,defaults:CouncilDefaults,session:ProviderSession) {
-  const assertControl=()=>{if(session.mode!=='MANUAL_CONTROL')throw new Error('已暂停，等待人工接管');};
+export async function prepareCouncil(page:Page,defaults:CouncilDefaults,session:ProviderSession,expectedMode:'MANUAL_CONTROL'|'AUTOMATION'='MANUAL_CONTROL') {
+  const assertControl=()=>{if(session.mode!==expectedMode)throw new Interrupted('已暂停，等待人工接管');};
   let teamFilled=false;let addressApplied=false;
   for(let step=0;step<4;step++) {
     assertControl();
-    const form=page.frames().find(frame=>frame!==page.mainFrame() && new URL(frame.url()).hostname==='towerhamlets-self.achieveservice.com');
-    if(!form)return {stage:'MANUAL',message:'官网表单尚未加载，请稍后重试。'};
+    let form=page.frames().find(frame=>frame!==page.mainFrame() && new URL(frame.url()).hostname==='towerhamlets-self.achieveservice.com');
+    for(let wait=0;!form&&wait<40;wait++){assertControl();await page.waitForTimeout(250);form=page.frames().find(frame=>frame!==page.mainFrame() && new URL(frame.url()).hostname==='towerhamlets-self.achieveservice.com');}
+    if(!form)return {stage:'WAITING',message:'暂无信息：官网表单尚未加载，将自动重试。'};
     const current=await stage(form);
     if(current==='CALENDAR')return {stage:current,message:addressApplied?'已应用默认邮编与地址并进入Book pitch日历；未选择时间或提交预约。':'已进入Book pitch日历；未选择时间或提交预约。'};
     if(current==='PITCH') {
-      const apply=async(label:string,fn:()=>Promise<void>)=>{try{await fn();}catch{throw new Error(`Council默认选项应用未完成：${label}；请检查官网当前选项。`);}};
+      const apply=async(label:string,fn:()=>Promise<void>)=>{try{await fn();}catch(error){if(error instanceof Interrupted)throw error;throw new Error(`Council默认选项应用未完成：${label}；请检查官网当前选项。`);}};
       await apply('运动类型',()=>selectLabel(form,'sportToBook','Football',assertControl));
       await apply('Stepney Green场地',()=>selectLabel(form,'footbalPitch',defaults.pitch,assertControl));
       await apply('居民或本地队伍 No',()=>radioLabel(form,'TH_borough',defaults.resident,assertControl));
@@ -76,7 +78,7 @@ export async function prepareCouncil(page:Page,defaults:CouncilDefaults,session:
     if(current!=='PITCH' && current!=='DETAILS' && current!=='ADDRESS')return {stage:'MANUAL',message:'当前页面需要人工核对，未点击后续提交。'};
     const unsafe=await form.evaluate(()=>{
       const visible=(el:Element)=>el.getClientRects().length>0 && getComputedStyle(el).visibility!=='hidden';
-      return Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement>('input,select,textarea')).some(el=>visible(el) && ((el.required && !el.validity.valid) || (el instanceof HTMLInputElement && el.type==='checkbox' && /terms|agree|consent|declaration/i.test([el.name,...Array.from(el.labels||[]).map(label=>label.textContent||'')].join(' ')))));
+      return Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement>('input,select,textarea')).some(el=>visible(el) && ((el.required && !el.validity.valid) || (el instanceof HTMLInputElement && el.type==='checkbox' && !el.checked && /terms|agree|consent|declaration/i.test([el.name,...Array.from(el.labels||[]).map(label=>label.textContent||'')].join(' ')))));
     });
     if(unsafe || (current==='DETAILS' && !teamFilled))return {stage:'DETAILS',message:'默认选项已填写；请在官网检查尚需填写的个人资料或确认项，再进入日历。未自动确认条款。'};
     const controls=form.locator('button,input[type=submit],a[role=button]');

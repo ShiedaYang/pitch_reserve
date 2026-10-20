@@ -13,7 +13,7 @@ test('credentials validate without changing password whitespace',()=>{
 });
 
 test('PlayFootball opens its normal login panel and Council recognizes its protected wizard',async()=>{
-  const browser=await chromium.launch({channel:'msedge',headless:true,chromiumSandbox:true,timeout:30000});
+  const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true,timeout:30000});
   try {
     const page=await browser.newPage();let posted=false;
     await page.route('**/*',route=>{if(route.request().method()==='POST'){posted=true;return route.fulfill({contentType:'text/html',body:'<a href="/logout">Log out</a>'});}return route.fulfill({contentType:'text/html',body:'<a role="button" href="#log-in-bar" onclick="event.preventDefault();document.getElementById(\'log-in-bar\').hidden=false">Account</a><div id="log-in-bar" hidden><form method="post"><input type="email" name="n_EmailAddress_em"><input type="password" name="Password"><button>Log In</button></form></div>'});});
@@ -29,7 +29,7 @@ test('PlayFootball opens its normal login panel and Council recognizes its prote
 });
 
 test('Council login follows its account-home redirect to the fixed booking entry without submitting details',async()=>{
-  const browser=await chromium.launch({channel:'msedge',headless:true,chromiumSandbox:true,timeout:30000});
+  const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true,timeout:30000});
   try {
     const page=await browser.newPage();let posts=0;const host='https://towerhamlets-self.achieveservice.com';
     await page.route('**/*',route=>{
@@ -44,7 +44,7 @@ test('Council login follows its account-home redirect to the fixed booking entry
 });
 
 test('three account groups submit only their login form and never expose unsaved credentials in state',async()=>{
-  const browser=await chromium.launch({channel:'msedge',headless:true,chromiumSandbox:true,timeout:30000});
+  const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true,timeout:30000});
   const store=new Store(':memory:');const monitor=new Monitor(store,'.local/test-unused');
   const posts:Array<{provider:string;username:string;password:string}>=[];
   try {
@@ -71,7 +71,7 @@ test('three account groups submit only their login form and never expose unsaved
 });
 
 test('security verification pauses before filling and fill errors never return password contents',async()=>{
-  const browser=await chromium.launch({channel:'msedge',headless:true,chromiumSandbox:true,timeout:30000});
+  const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true,timeout:30000});
   try {
     const page=await browser.newPage();let body='<h1>Performing security verification</h1><form><input name="username"><input type="password"><button>Log in</button></form>';
     await page.route('**/*',route=>route.fulfill({contentType:'text/html',body}));await page.goto(loginUrls.ggcb);

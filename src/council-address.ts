@@ -20,7 +20,7 @@ async function candidates(form:Frame) {
   return form.locator('#addressSelector option').evaluateAll(options=>options.filter(option=>!(option as HTMLOptionElement).disabled).map(option=>({value:(option as HTMLOptionElement).value,label:option.textContent||''})).filter(option=>option.value && option.label.trim() && !/^(?:select|please select|no address(?:es)?|no results|not found|address not)/i.test(option.label.trim())));
 }
 
-// Runs only from the explicit "apply defaults" action, never from monitoring.
+// Used by explicit preparation and automatic monitoring with saved defaults.
 // A postcode is not enough to choose between multiple real addresses.
 export async function applyCouncilAddress(form:Frame,root:string,assertControl:()=>void,lookupTimeoutMs=12000) {
   const defaults=await readAddressDefault(root);if(!defaults)return {kind:'MANUAL' as const,count:0,message:'官网需要核对或补充地址，请在官网完成后继续。'};

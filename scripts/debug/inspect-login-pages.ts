@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import { loginUrls,providerIds } from '../../src/domain.ts';
-const browser=await chromium.launch({channel:'msedge',headless:true,chromiumSandbox:true,timeout:30000});
+const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true,timeout:30000});
 try {
   await Promise.all(providerIds.map(async provider=>{
     const context=await browser.newContext();const page=await context.newPage();

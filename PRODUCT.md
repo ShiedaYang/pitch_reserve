@@ -1,0 +1,53 @@
+# Pitch Reserve
+
+<!-- impeccable:product-schema 1 -->
+
+## Platform
+
+web
+
+## Users
+
+A single local user arranging an evening football game in London. The user has confirmed that available dates, venues and prices should lead the interface.
+
+## Product Purpose
+
+Monitor four ordinary pitch-hire entries for Monday–Thursday sessions starting at 18:00, within a two-month range, with a preference for one booking per week across all venues.
+
+## Operating Context
+
+A lightweight Windows/Linux console at 127.0.0.1:4318, backed by Node.js, Playwright, SQLite and three separate browser/account groups. GGCB and Tower Hamlets have separate accounts; the two PlayFootball venues share one account.
+
+## Capabilities and Constraints
+
+- GGCB half pitch, Stepney Green Third, Westferry ordinary 5v5 and Poplar ordinary 7v7.
+- Read-only inventory monitoring; automatic holding and payment are disabled.
+- Results distinguish availability, unavailable inventory, release windows, unknown data and stale observations. Website limits must remain visible.
+- Prices and duration come from actual observations; missing information must remain unverified.
+- Links open the corresponding official venue in the visiting user's browser, without navigating or pausing the server's scanner browser.
+- A durable availability-notification outbox records newly observed availability, deduplicates continuous availability, and retains delivery/retry/expiry state. Optional Feishu delivery supports user and group recipients, with explicit enabling, encrypted settings and per-recipient receipts.
+- Encrypted local credentials, visible saved usernames, fixed password masks and manual login takeover must remain usable.
+- Council monitoring automatically applies saved defaults and the explicitly saved address choice, then reads the calendar. Missing personal data or unchecked consent needs human input. No personal configuration belongs in source control.
+- Manual takeover returns to monitoring after one minute without trusted website or console activity, subject to login/challenge checks. Explicit pause stays paused. Missing, unreleased or unreadable inventory displays “暂无信息”, with its reason retained.
+- The console requires an awake computer and running service.
+
+## Brand Commitments
+
+Keep the product name Pitch Reserve and Chinese interface copy. The user has requested a layout redesign; the former green card layout is not binding.
+
+The user chose the conventional “标准工作台” direction: familiar top navigation, a neutral table, and actionable dates, venues and prices in the first viewport.
+
+## Evidence on Hand
+
+The running local console, repository adapters, README.md, docs/website-validation.md and scripts/verify-console.ts. Real inventory changes over time; do not invent current availability or prices for the design.
+
+## Product Principles
+
+1. Put actionable dates and prices before administration.
+2. Show uncertainty and freshness next to the observation.
+3. Keep user takeover and account saving explicit.
+4. Preserve the lightweight local runtime and read-only booking boundary.
+
+Feishu configuration belongs to the Notifications tab. Individual pending/failed notifications support explicit manual delivery to saved enabled recipients, independently of the automatic-delivery switch, with the same freshness, expiry and dedupe protections.
+
+Recovery closes and reopens a timed-out resource tab once; a repeated timeout or human verification requests manual takeover visibly. Feishu has independent administrator recipients and persistent incident dedupe; explicit resends preserve original receipts and label historical inventory. Linux supports Chromium, AES-GCM secret storage and an optional protected remote-desktop link for manual verification.

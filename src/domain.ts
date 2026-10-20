@@ -1,5 +1,5 @@
 export type ProviderId = 'ggcb' | 'council' | 'playfootball';
-export type Availability = 'AVAILABLE' | 'BOOKED' | 'UNAVAILABLE' | 'UNKNOWN' | 'NEARBY';
+export type Availability = 'AVAILABLE' | 'BOOKED' | 'UNAVAILABLE' | 'UNKNOWN';
 export interface Resource { id: string; provider: ProviderId; name: string; format: string; url: string; }
 export const resources: Resource[] = [
   { id: 'ggcb-half', provider: 'ggcb', name: 'GGCB', format: '6v6 · 半场 · 55分钟', url: 'https://ggcb.co.uk/booking/6-a-side-3g-half-pitch/' },
@@ -20,6 +20,11 @@ export interface ScanResult {
   observations: Observation[]; coverage: Coverage[]; summary: string;
   status: 'OK' | 'PARTIAL' | 'LOGIN_REQUIRED' | 'ERROR'; navigation?: string;
   form?: { stage:'ADDRESS'; manualEnabled:boolean; manualVisible:boolean; manualComplete:boolean; addressPickerVisible:boolean; actions:Array<{label:string;inViewport:boolean}> };
+}
+// Compatibility for observations saved by the earlier nearby-inventory parser.
+export function normalizeScanResult(result: ScanResult): ScanResult {
+  return {...result,observations:result.observations.map(item=>String(item.availability)==='NEARBY'
+    ? {...item,availability:'UNAVAILABLE',price:null,duration:null,note:'该场地该时段无可订场次'} : item)};
 }
 export type SessionStatus = 'UNKNOWN' | 'ANONYMOUS_READABLE' | 'AUTHENTICATED' | 'LOGIN_REQUIRED';
 export type Mode = 'AUTOMATION' | 'MANUAL_CONTROL' | 'PAUSED';

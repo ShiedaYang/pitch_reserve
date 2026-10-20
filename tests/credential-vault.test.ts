@@ -8,7 +8,7 @@ import {ProviderSession} from '../src/browser.ts';
 import {Monitor} from '../src/monitor.ts';
 import {Store} from '../src/store.ts';
 
-test('Windows encrypted credentials survive process-style restoration, stay isolated, and can be removed',{skip:process.platform!=='win32'},async()=>{
+test('OS encrypted credentials survive process-style restoration, stay isolated, and can be removed',async()=>{
   const root=await mkdtemp(join(tmpdir(),'pitch-vault-'));const vault=new CredentialVault(root);
   const credentials={username:'fixture@example.invalid',password:' 中文 secret with spaces '};
   try {

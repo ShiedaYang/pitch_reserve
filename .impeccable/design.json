@@ -1,0 +1,341 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-19T10:54:41Z",
+  "title": "Design System: Pitch Reserve",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Cool gray ground",
+        "tonalRamp": [
+          "oklch(15.00% 0.00343 247.86)",
+          "oklch(26.43% 0.00343 247.86)",
+          "oklch(37.86% 0.00343 247.86)",
+          "oklch(49.29% 0.00343 247.86)",
+          "oklch(60.71% 0.00343 247.86)",
+          "oklch(72.14% 0.00343 247.86)",
+          "oklch(83.57% 0.00343 247.86)",
+          "oklch(95.00% 0.00343 247.86)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "White working surface",
+        "tonalRamp": [
+          "oklch(15.00% 0.00000 89.88)",
+          "oklch(26.43% 0.00000 89.88)",
+          "oklch(37.86% 0.00000 89.88)",
+          "oklch(49.29% 0.00000 89.88)",
+          "oklch(60.71% 0.00000 89.88)",
+          "oklch(72.14% 0.00000 89.88)",
+          "oklch(83.57% 0.00000 89.88)",
+          "oklch(95.00% 0.00000 89.88)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Slate ink",
+        "tonalRamp": [
+          "oklch(15.00% 0.03595 253.67)",
+          "oklch(26.43% 0.03595 253.67)",
+          "oklch(37.86% 0.03595 253.67)",
+          "oklch(49.29% 0.03595 253.67)",
+          "oklch(60.71% 0.03595 253.67)",
+          "oklch(72.14% 0.03595 253.67)",
+          "oklch(83.57% 0.03595 253.67)",
+          "oklch(95.00% 0.03595 253.67)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted slate",
+        "tonalRamp": [
+          "oklch(15.00% 0.03825 252.71)",
+          "oklch(26.43% 0.03825 252.71)",
+          "oklch(37.86% 0.03825 252.71)",
+          "oklch(49.29% 0.03825 252.71)",
+          "oklch(60.71% 0.03825 252.71)",
+          "oklch(72.14% 0.03825 252.71)",
+          "oklch(83.57% 0.03825 252.71)",
+          "oklch(95.00% 0.03825 252.71)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Fine cool rule",
+        "tonalRamp": [
+          "oklch(15.00% 0.01505 251.17)",
+          "oklch(26.43% 0.01505 251.17)",
+          "oklch(37.86% 0.01505 251.17)",
+          "oklch(49.29% 0.01505 251.17)",
+          "oklch(60.71% 0.01505 251.17)",
+          "oklch(72.14% 0.01505 251.17)",
+          "oklch(83.57% 0.01505 251.17)",
+          "oklch(95.00% 0.01505 251.17)"
+        ]
+      },
+      "blue": {
+        "role": "primary",
+        "displayName": "Muted workbench blue",
+        "tonalRamp": [
+          "oklch(15.00% 0.07951 249.85)",
+          "oklch(26.43% 0.07951 249.85)",
+          "oklch(37.86% 0.07951 249.85)",
+          "oklch(49.29% 0.07951 249.85)",
+          "oklch(60.71% 0.07951 249.85)",
+          "oklch(72.14% 0.07951 249.85)",
+          "oklch(83.57% 0.07951 249.85)",
+          "oklch(95.00% 0.07951 249.85)"
+        ]
+      },
+      "blue-hover": {
+        "role": "primary",
+        "displayName": "Deep workbench blue",
+        "tonalRamp": [
+          "oklch(15.00% 0.06883 249.26)",
+          "oklch(26.43% 0.06883 249.26)",
+          "oklch(37.86% 0.06883 249.26)",
+          "oklch(49.29% 0.06883 249.26)",
+          "oklch(60.71% 0.06883 249.26)",
+          "oklch(72.14% 0.06883 249.26)",
+          "oklch(83.57% 0.06883 249.26)",
+          "oklch(95.00% 0.06883 249.26)"
+        ]
+      },
+      "blue-soft": {
+        "role": "primary",
+        "displayName": "Pale workbench blue",
+        "tonalRamp": [
+          "oklch(15.00% 0.01032 247.93)",
+          "oklch(26.43% 0.01032 247.93)",
+          "oklch(37.86% 0.01032 247.93)",
+          "oklch(49.29% 0.01032 247.93)",
+          "oklch(60.71% 0.01032 247.93)",
+          "oklch(72.14% 0.01032 247.93)",
+          "oklch(83.57% 0.01032 247.93)",
+          "oklch(95.00% 0.01032 247.93)"
+        ]
+      },
+      "green": {
+        "role": "semantic",
+        "displayName": "Observed green",
+        "tonalRamp": [
+          "oklch(15.00% 0.08102 167.98)",
+          "oklch(26.43% 0.08102 167.98)",
+          "oklch(37.86% 0.08102 167.98)",
+          "oklch(49.29% 0.08102 167.98)",
+          "oklch(60.71% 0.08102 167.98)",
+          "oklch(72.14% 0.08102 167.98)",
+          "oklch(83.57% 0.08102 167.98)",
+          "oklch(95.00% 0.08102 167.98)"
+        ]
+      },
+      "green-soft": {
+        "role": "semantic",
+        "displayName": "Pale observed green",
+        "tonalRamp": [
+          "oklch(15.00% 0.01157 162.05)",
+          "oklch(26.43% 0.01157 162.05)",
+          "oklch(37.86% 0.01157 162.05)",
+          "oklch(49.29% 0.01157 162.05)",
+          "oklch(60.71% 0.01157 162.05)",
+          "oklch(72.14% 0.01157 162.05)",
+          "oklch(83.57% 0.01157 162.05)",
+          "oklch(95.00% 0.01157 162.05)"
+        ]
+      },
+      "amber": {
+        "role": "semantic",
+        "displayName": "Caution amber",
+        "tonalRamp": [
+          "oklch(15.00% 0.09595 72.61)",
+          "oklch(26.43% 0.09595 72.61)",
+          "oklch(37.86% 0.09595 72.61)",
+          "oklch(49.29% 0.09595 72.61)",
+          "oklch(60.71% 0.09595 72.61)",
+          "oklch(72.14% 0.09595 72.61)",
+          "oklch(83.57% 0.09595 72.61)",
+          "oklch(95.00% 0.09595 72.61)"
+        ]
+      },
+      "amber-soft": {
+        "role": "semantic",
+        "displayName": "Pale caution amber",
+        "tonalRamp": [
+          "oklch(15.00% 0.01995 84.59)",
+          "oklch(26.43% 0.01995 84.59)",
+          "oklch(37.86% 0.01995 84.59)",
+          "oklch(49.29% 0.01995 84.59)",
+          "oklch(60.71% 0.01995 84.59)",
+          "oklch(72.14% 0.01995 84.59)",
+          "oklch(83.57% 0.01995 84.59)",
+          "oklch(95.00% 0.01995 84.59)"
+        ]
+      },
+      "red": {
+        "role": "semantic",
+        "displayName": "Error red",
+        "tonalRamp": [
+          "oklch(15.00% 0.14441 24.25)",
+          "oklch(26.43% 0.14441 24.25)",
+          "oklch(37.86% 0.14441 24.25)",
+          "oklch(49.29% 0.14441 24.25)",
+          "oklch(60.71% 0.14441 24.25)",
+          "oklch(72.14% 0.14441 24.25)",
+          "oklch(83.57% 0.14441 24.25)",
+          "oklch(95.00% 0.14441 24.25)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Page heading",
+        "purpose": "Primary page heading; 25px at the mobile breakpoint."
+      },
+      "title": {
+        "displayName": "Section title",
+        "purpose": "Section headings and prominent observed prices."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Chinese instructions, forms and operational copy."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "Compact action labels."
+      },
+      "label": {
+        "displayName": "Metadata",
+        "purpose": "Supporting labels and timestamps; selected mobile metadata is 11px."
+      }
+    },
+    "motion": [
+      {
+        "name": "tab-mark",
+        "value": "160ms cubic-bezier(.16, 1, .3, 1)",
+        "purpose": "Selected tab indicator clip-path reveal from inset(0 40%) to inset(0), only under prefers-reduced-motion: no-preference."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact",
+        "value": "1000px"
+      },
+      {
+        "name": "mobile",
+        "value": "640px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main scan, save and login actions.",
+      "html": "<button class=\"ds-button ds-primary\" type=\"button\">立即检查</button>",
+      "css": ".ds-button{font-family:\"Segoe UI\",\"Microsoft YaHei UI\",\"Microsoft YaHei\",sans-serif;font-size:14px;line-height:1.6;font-weight:600;min-height:40px;padding:8px 15px;border:1px solid var(--line);border-radius:6px;cursor:pointer;}.ds-primary{background:var(--blue);border-color:var(--blue);color:var(--surface);}.ds-primary:hover{background:var(--blue-hover);border-color:var(--blue-hover);}.ds-button:disabled{background:#e9eef3;color:#647589;border-color:var(--line);cursor:default;}.ds-button:focus-visible{outline:3px solid #517cab;outline-offset:3px;}"
+    },
+    {
+      "name": "Secondary button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Explicit manual takeover and monitoring controls.",
+      "html": "<button class=\"ds-button ds-secondary\" type=\"button\">手动接管</button>",
+      "css": ".ds-button{font-family:\"Segoe UI\",\"Microsoft YaHei UI\",\"Microsoft YaHei\",sans-serif;font-size:14px;line-height:1.6;font-weight:600;min-height:40px;padding:8px 15px;border:1px solid var(--line);border-radius:6px;cursor:pointer;}.ds-secondary{background:var(--surface);color:var(--ink);}.ds-secondary:hover{background:var(--blue-soft);border-color:#a9bed1;}.ds-button:disabled{background:#e9eef3;color:#647589;border-color:var(--line);cursor:default;}.ds-button:focus-visible{outline:3px solid #517cab;outline-offset:3px;}"
+    },
+    {
+      "name": "Text button",
+      "kind": "button",
+      "refersTo": "button-text",
+      "description": "Compact range and filter actions.",
+      "html": "<button class=\"ds-text\" type=\"button\">调整范围</button>",
+      "css": ".ds-text{font-family:\"Segoe UI\",\"Microsoft YaHei UI\",\"Microsoft YaHei\",sans-serif;font-size:14px;line-height:1.6;font-weight:600;padding:5px 0;min-height:36px;border:0;border-radius:6px;color:var(--blue);background:transparent;cursor:pointer;}.ds-text:hover{text-decoration:underline;}.ds-text:focus-visible{outline:3px solid #517cab;outline-offset:3px;}"
+    },
+    {
+      "name": "Account field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Visible username field; passwords use a separate native password input and fixed saved mask.",
+      "html": "<label class=\"ds-field\">账号 / 邮箱<input class=\"ds-input\" type=\"text\" autocomplete=\"username\" placeholder=\"账号 / 邮箱\"></label>",
+      "css": ".ds-field{font-family:\"Segoe UI\",\"Microsoft YaHei UI\",\"Microsoft YaHei\",sans-serif;display:grid;gap:7px;font-size:14px;line-height:1.6;font-weight:600;color:var(--ink);}.ds-input{font-family:\"Segoe UI\",\"Microsoft YaHei UI\",\"Microsoft YaHei\",sans-serif;font-size:14px;line-height:1.6;font-weight:400;width:100%;min-height:42px;padding:9px 11px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);caret-color:var(--blue);}.ds-input::placeholder{color:var(--muted);opacity:1;}.ds-input:focus-visible{outline:3px solid #517cab;outline-offset:3px;}"
+    },
+    {
+      "name": "Top tabs",
+      "kind": "nav",
+      "refersTo": "tab",
+      "description": "Selected tab indicator and keyboard focus; application supplies tab switching and arrow-key behavior.",
+      "html": "<nav class=\"ds-tabs\" role=\"tablist\" aria-label=\"控制台页面\"><button class=\"ds-tab\" role=\"tab\" aria-selected=\"true\" type=\"button\">场次日历</button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\" tabindex=\"-1\" type=\"button\">账号与接管</button></nav>",
+      "css": ".ds-tabs{display:flex;gap:30px;background:var(--surface);}.ds-tab{font-family:\"Segoe UI\",\"Microsoft YaHei UI\",\"Microsoft YaHei\",sans-serif;position:relative;padding:12px 1px 14px;min-height:49px;border:0;border-radius:0;background:transparent;color:var(--muted);font-size:14px;line-height:1.6;font-weight:600;white-space:nowrap;cursor:pointer;}.ds-tab:hover,.ds-tab[aria-selected=true]{color:var(--blue);}.ds-tab[aria-selected=true]::after{content:\"\";position:absolute;bottom:-1px;left:0;right:0;height:3px;background:var(--blue);border-radius:2px 2px 0 0;}.ds-tab:focus-visible{outline:3px solid #517cab;outline-offset:3px;}@media(max-width:640px){.ds-tabs{gap:0;justify-content:space-between;}.ds-tab{padding:11px 0 13px;font-size:13px;}}@media(prefers-reduced-motion:no-preference){.ds-tab[aria-selected=true]::after{animation:ds-tab-mark 160ms cubic-bezier(.16,1,.3,1);}@keyframes ds-tab-mark{from{clip-path:inset(0 40%);}to{clip-path:inset(0);}}}"
+    },
+    {
+      "name": "Monitoring tag",
+      "kind": "chip",
+      "refersTo": "tag",
+      "description": "Text-bearing normal monitoring status.",
+      "html": "<span class=\"ds-tag\">监测中</span>",
+      "css": ".ds-tag{font-family:\"Segoe UI\",\"Microsoft YaHei UI\",\"Microsoft YaHei\",sans-serif;display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;line-height:1.6;font-weight:500;background:var(--green-soft);color:var(--green);}"
+    },
+    {
+      "name": "Manual and warning tag",
+      "kind": "chip",
+      "refersTo": "tag-warning",
+      "description": "Text-bearing manual takeover or warning status.",
+      "html": "<span class=\"ds-warning-tag\">你正在接管</span>",
+      "css": ".ds-warning-tag{font-family:\"Segoe UI\",\"Microsoft YaHei UI\",\"Microsoft YaHei\",sans-serif;display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;line-height:1.6;font-weight:500;background:var(--amber-soft);color:var(--amber);}"
+    },
+    {
+      "name": "Settings panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Flat bordered settings container, with the implemented mobile padding.",
+      "html": "<section class=\"ds-panel\"><h2 class=\"ds-panel-title\">日期与频率</h2><p class=\"ds-panel-copy\">周一至周四，18:00 开始、19:00 前结束，按伦敦当地时间读取。</p></section>",
+      "css": ".ds-panel{font-family:\"Segoe UI\",\"Microsoft YaHei UI\",\"Microsoft YaHei\",sans-serif;padding:26px 28px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);max-width:740px;color:var(--ink);font-size:14px;line-height:1.6;}.ds-panel-title{margin:0;font-size:19px;line-height:1.4;font-weight:650;}.ds-panel-copy{margin:9px 0 0;color:var(--muted);}@media(max-width:640px){.ds-panel{padding:22px 18px;}}"
+    },
+    {
+      "name": "Available observation cell",
+      "kind": "custom",
+      "refersTo": "available-cell",
+      "description": "Signature actionable observation; placeholder copy illustrates missing evidence without inventing inventory or prices.",
+      "html": "<a class=\"ds-cell\" href=\"#official-site\">18:00 可订观察<strong class=\"ds-price\">价格待核实</strong><small class=\"ds-cell-note\">结束时间待核实</small><small class=\"ds-cell-note ds-stale\">历史观察 · 需重新查验</small><small class=\"ds-cell-note\"><span class=\"ds-slot-action\">打开官网 <svg class=\"ds-external\" viewBox=\"0 0 16 16\" aria-hidden=\"true\"><path d=\"M9 3h4v4M13 3L7 9M6 3H3v10h10v-3\"/></svg></span></small></a>",
+      "css": ".ds-cell{font-family:\"Segoe UI\",\"Microsoft YaHei UI\",\"Microsoft YaHei\",sans-serif;display:block;min-height:62px;margin:7px;padding:9px 11px;border-radius:6px;font-size:13px;line-height:1.6;color:var(--green);background:var(--green-soft);text-decoration:none;overflow-wrap:anywhere;font-variant-numeric:tabular-nums;}.ds-cell:hover{background:#dceee3;}.ds-price{display:block;font-size:19px;line-height:1.4;font-weight:650;color:#174e3b;margin-top:3px;}.ds-cell-note{display:block;font-size:12px;line-height:1.55;margin-top:3px;color:#416854;}.ds-stale{color:var(--amber);}.ds-slot-action{display:inline-flex;align-items:center;gap:4px;text-decoration:underline;text-underline-offset:3px;}.ds-external{width:12px;height:12px;flex-shrink:0;stroke:currentColor;stroke-width:1.6;fill:none;}.ds-cell:focus-visible{outline:3px solid #517cab;outline-offset:3px;}@media(max-width:640px){.ds-cell{margin:5px;padding:9px;}.ds-price{font-size:18px;}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "标准工作台",
+    "overview": "Pitch Reserve uses the familiar language of a working console: cool neutral ground, white working surfaces, slate text and muted blue actions. Aligned information, compact controls and clear state labels support repeated comparison. The product name and Chinese interface remain the visual and verbal anchors.\n\nFlat surfaces, fine rules and tabular numerals make dates, observations and prices easy to scan. Color identifies action and operational state; it does not replace the text that explains uncertainty, freshness or user takeover. Native system fonts and inline line icons keep this local tool lightweight.",
+    "keyCharacteristics": [
+      "Familiar top tabs and compact forms.",
+      "Cool neutral surfaces with muted blue actions.",
+      "Flat containers, fine dividers and aligned tabular data.",
+      "Explicit observation, uncertainty and takeover labels.",
+      "Chinese interface copy and system typography."
+    ],
+    "rules": [
+      {
+        "name": "The Explicit State Rule",
+        "body": "Pair every operational color with its visible state text. Unknown, unread and unreleased observations must stay distinguishable from unavailable inventory.",
+        "section": "colors"
+      },
+      {
+        "name": "The Flat Surface Rule",
+        "body": "Use boundaries, alignment and tonal surfaces to express hierarchy; retain the implemented shadow-free treatment.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep Chinese copy, system typography and tabular numerals.",
+      "Do align operational information in flat surfaces with fine borders and compact controls.",
+      "Do keep prices, duration, freshness and uncertainty beside the observation they describe.",
+      "Do retain visible focus, keyboard navigation and the local table scroll region on narrow screens.",
+      "Do keep saved usernames visible, passwords masked and account takeover explicit."
+    ],
+    "donts": [
+      "Don't replace the chosen workbench with promotional decoration, external fonts or raster imagery.",
+      "Don't add shadows or use color alone to distinguish operational states.",
+      "Don't present unread, unknown, stale or unreleased data as confirmed unavailability.",
+      "Don't invent prices, durations, current availability or a successful booking state.",
+      "Don't hide the readonly monitoring boundary or imply that opening an observation holds inventory."
+    ]
+  }
+}

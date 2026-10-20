@@ -35,6 +35,9 @@ export async function authSignals(page:Page,provider:ProviderId) {
         authenticated:wizard || Array.from(document.querySelectorAll('a,button')).some(el=>visible(el) && /^(?:log\s*out|sign\s*out)$/i.test((el.textContent||el.getAttribute('aria-label')||'').trim())),
         password:Array.from(document.querySelectorAll('input[type=password]')).some(visible),
         challenge:Array.from(document.querySelectorAll('h1,h2,h3,[role=heading]')).some(el=>visible(el) && /security verification|verify you are human|two.factor|verification code|验证码/i.test(el.textContent||'')) || Array.from(document.querySelectorAll('input[autocomplete=one-time-code]')).some(visible)
+          || /just a moment|attention required.*cloudflare/i.test(document.title)
+          || /verif(?:y|ying) (?:that )?you are human|checking your browser|performing security verification|确认您是真人|人机验证/i.test(document.body?.innerText||'')
+          || shown('#cf-chl-widget,#challenge-running,#challenge-stage,iframe[src*="challenges.cloudflare.com"],iframe[title*="security challenge" i]')
       };
     },councilBooking).catch(()=>null);
     if(signals) {authenticated ||= signals.authenticated; password ||= signals.password; challenge ||= signals.challenge;}

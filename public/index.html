@@ -1,11 +1,85 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pitch Reserve · 本地场地监测</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
-<body><div class="shell"><header><a class="brand" href="/"><span class="brand-icon">P</span><span>Pitch Reserve<small>本地场地监测</small></span></a><span class="local"><i></i> 仅本机运行</span></header>
-<main><section class="hero"><div><span class="eyebrow">你的每周一场</span><h1>好场地，留意着。</h1><p>统一查看四个场地，登录时由你接管。</p></div><div class="readonly"><span class="status-dot"></span><div><strong>只读监测已启用</strong><small>自动锁位关闭 · 不提交预约或付款</small></div></div></section>
-<div id="message" role="status" aria-live="polite"></div>
-<section class="panel settings"><div><h2>监测偏好</h2><p>周一至周四 · 18:00开始 · 19:00前结束 · 伦敦当地时间</p><small>四个场地合计每周最多一场；GGCB实际为55分钟，是否接受仍待确认。</small></div><form id="policy-form"><label>开始日期<input type="date" id="date-from" required></label><label>结束日期<input type="date" id="date-to" required></label><label>检查间隔<select id="interval"><option value="10">10分钟</option><option value="15">15分钟</option><option value="30">30分钟</option><option value="60">60分钟</option><option value="120">120分钟</option></select></label><button type="submit" class="primary">保存偏好</button></form></section>
-<section><div class="section-title"><div><h2>登录与接管</h2><p>三组账号分别登录。PlayFootball 两个场地共用账号；验证码和资料核对可随时手动接管。</p></div><button id="pause-all" class="quiet">全部暂停</button></div><div id="providers" class="providers"></div></section>
-<section><div class="section-title"><div><h2>四个监测入口</h2><p>普通单次租场；每项显示真实覆盖范围，查询失败不会显示为售罄。</p></div><button id="scan-all" class="primary">立即检查</button></div><div id="resources" class="resources"></div></section>
-<section class="panel results"><div class="section-title"><div><h2>18:00 场次观察</h2><p id="results-caption">等待首次检查</p></div><label class="filter"><input id="available-only" type="checkbox">仅看可订</label></div><div class="table-scroll"><table><thead><tr><th>日期 / 周</th><th>GGCB · 半场</th><th>Stepney · 1/3场</th><th>Westferry · 5v5</th><th>Poplar · 7v7</th></tr></thead><tbody id="calendar"></tbody></table></div><p class="legend">点击可选场次可打开对应官网入口并接管；日期、时间及结算价需在官网确认。价格来自场次报价或只读费用试算，缺失时明确显示待核实。未选择或保留库存。“附近场地”不计入本场可订。</p></section>
-<details class="panel logs"><summary>运行记录 <span>最近20条</span></summary><ul id="events"></ul></details>
-<footer><span>本机保存会话与监测记录</span><span id="connection">连接中…</span><span>电脑睡眠或服务退出时，监测停止。</span></footer></main></div></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Pitch Reserve · 场次日历</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <header class="app-header">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="Pitch Reserve 首页">
+        <svg class="brand-icon" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="3" y="5" width="26" height="22" rx="3"/><path d="M16 5v22M3 12h5v8H3m26-8h-5v8h5"/><circle cx="16" cy="16" r="4"/></svg>
+        <span>Pitch Reserve</span>
+      </a>
+      <div class="header-status"><span class="local">监测控制台</span><span class="readonly">只读监测 · 自动锁位关闭</span></div>
+    </div>
+    <div class="nav-wrap"><nav class="tabs" role="tablist" aria-label="控制台页面">
+      <button id="tab-calendar" role="tab" aria-selected="true" aria-controls="view-calendar" data-view="calendar">场次日历</button>
+      <button id="tab-accounts" role="tab" aria-selected="false" aria-controls="view-accounts" data-view="accounts" tabindex="-1">账号与接管</button>
+      <button id="tab-settings" role="tab" aria-selected="false" aria-controls="view-settings" data-view="settings" tabindex="-1">监测偏好</button>
+      <button id="tab-notifications" role="tab" aria-selected="false" aria-controls="view-notifications" data-view="notifications" tabindex="-1">通知列表</button>
+      <button id="tab-activity" role="tab" aria-selected="false" aria-controls="view-activity" data-view="activity" tabindex="-1">运行记录</button>
+    </nav></div>
+  </header>
+  <main id="main" tabindex="-1">
+    <div id="message" role="status" aria-live="polite"></div>
+    <div id="monitor-alerts" class="monitor-alerts" role="status" aria-live="polite" hidden></div>
+    <section id="view-calendar" class="view" role="tabpanel" aria-labelledby="tab-calendar">
+      <div class="page-heading"><div><h1>场次日历</h1><p>周一至周四，18:00–19:00 <span class="timezone">伦敦时间</span></p></div><button id="scan-all" class="primary">立即检查</button></div>
+      <div class="calendar-toolbar"><p id="results-caption">正在读取监测记录…</p><div class="toolbar-controls"><button class="text-button" data-go="settings">调整范围</button><label class="filter"><input id="available-only" type="checkbox">仅看可订日期</label></div></div>
+      <div id="next-slots" class="next-slots" aria-label="近期可订观察"></div>
+      <div id="calendar-empty" class="empty-state" role="status" hidden></div>
+      <div id="calendar-grid" class="table-scroll" tabindex="0" role="region" aria-label="各日期四个场地的18点场次，可横向和纵向滚动">
+        <table>
+          <caption class="sr-only">目标日期与四个场地的18点场次状态、价格和时长</caption>
+          <thead><tr><th scope="col">日期 <small>18:00 开始</small></th><th scope="col">GGCB <small>半场 · 6v6</small></th><th scope="col">Stepney Green <small>三分之一场</small></th><th scope="col">Westferry <small>普通 5v5</small></th><th scope="col">Poplar <small>普通 7v7</small></th></tr></thead>
+          <tbody id="calendar"><tr><td colspan="5" class="table-empty">正在读取场次…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="table-help"><div class="legend"><span class="legend-item available-key">可订观察</span><span class="legend-item booked-key">不可订</span><span class="legend-item unreleased-key">暂无信息（未放号）</span><span class="legend-item unknown-key">暂无信息</span></div><span class="scroll-hint">左右滑动查看四个场地</span></div>
+      <p class="result-note">点击场次会在你的浏览器新标签页打开对应官网，登录与结算请在官网完成。价格与时长来自实际观察，缺失时标注待核实。每周最多选择一场，当前未保留库存。</p>
+      <details class="coverage"><summary>监测覆盖与官网入口 <span id="monitor-summary">4 个场地</span></summary><p class="section-description">这里显示每个入口的实际读取范围。未显示、未放号或查询失败统一显示“暂无信息”，不代表售罄，系统会继续监测。</p><div id="resources" class="resources"></div></details>
+    </section>
+    <section id="view-accounts" class="view" role="tabpanel" aria-labelledby="tab-accounts" hidden>
+      <div class="page-heading"><div><h1>账号与接管</h1><p>三组账号独立保存，PlayFootball 两个场地共用一组。</p></div><button id="pause-all">全部暂停</button></div>
+      <p class="section-description">账号明文显示，密码以隐藏提示显示保存状态。需要验证码或补充资料时，使用“手动接管”在官网完成；1分钟无操作后会自动检测并恢复监测。主动点击“暂停”会保持暂停。</p>
+      <div id="providers" class="providers"></div>
+    </section>
+    <section id="view-settings" class="view" role="tabpanel" aria-labelledby="tab-settings" hidden>
+      <div class="page-heading"><div><h1>监测偏好</h1><p>设置日期范围与检查频率。</p></div></div>
+      <section class="settings-panel"><h2>日期与频率</h2><p>周一至周四，18:00 开始、19:00 前结束，按伦敦当地时间读取。</p><form id="policy-form"><div class="date-fields"><label>开始日期<input type="date" id="date-from" required></label><label>结束日期<input type="date" id="date-to" required></label></div><label>检查间隔<select id="interval"><option value="10">10分钟</option><option value="15">15分钟</option><option value="30">30分钟</option><option value="60">60分钟</option><option value="120">120分钟</option></select></label><div><button type="submit" class="primary">保存偏好</button></div></form></section>
+      <section class="settings-note"><h2>当前预订规则</h2><p>四个场地合计每周最多一场，普通单次租场。GGCB 实际为 55 分钟，时长偏好仍待确认。</p><p>自动锁位关闭。控制台只读取场次信息，付款由你在官网完成。</p></section>
+
+    </section>
+    <section id="view-notifications" class="view" role="tabpanel" aria-labelledby="tab-notifications" hidden>
+      <div class="page-heading"><div><h1>通知列表</h1><p>新可订场次的发现记录与发送状态。</p></div></div>
+      <p id="notification-channel-notice" class="notification-notice">正在读取消息渠道状态…</p>
+      <details id="feishu-configuration" class="settings-panel feishu-panel"><summary>飞书通知配置</summary><p id="feishu-status">正在读取配置…</p><p id="feishu-error" class="feishu-error" role="status" hidden></p>
+        <form id="feishu-form">
+          <div class="feishu-auth"><label>App ID<input id="feishu-app-id" autocomplete="off" spellcheck="false" required></label><label>App Secret<input id="feishu-app-secret" type="password" autocomplete="new-password" maxlength="512" placeholder="填写应用密钥"></label></div>
+          <small>密钥加密保存在服务端，不回传到网页。已保存时留空即可保留；更换 App ID 时请填写对应的新密钥。</small>
+          <fieldset class="recipient-fieldset"><legend>收件人</legend><p>支持用户与群组。群组需先加入应用机器人；用户需在应用可用范围内。</p><div id="feishu-recipients"></div><button id="feishu-add-recipient" type="button">添加用户或群组</button></fieldset>
+          <label class="filter feishu-enable"><input id="feishu-enabled" type="checkbox">启用自动通知（会向勾选的收件人发送消息）</label>
+          <fieldset class="recipient-fieldset"><legend>管理员故障通知</legend><p>网站反复超时、人机验证、读取异常或场次消息发送失败时通知管理员。同一持续故障只通知一次，恢复后再次发生会建立新记录。</p><div id="feishu-admin-recipients"></div><button id="feishu-add-admin" type="button">添加管理员用户或群组</button><label class="filter feishu-enable"><input id="feishu-admin-enabled" type="checkbox">启用管理员通知（与场次自动通知独立）</label></fieldset>
+          <p id="feishu-admin-status" class="section-description"></p>
+          <div class="credential-actions"><button id="feishu-save" type="submit" class="primary">保存飞书配置</button><button id="feishu-validate" type="button">验证应用凭据</button></div><small>验证凭据不会发消息。开启自动通知后，新场次与仍有效的待发送记录会自动推送。</small>
+        </form>
+        <details class="feishu-preview"><summary>消息格式预览（不发送）</summary><pre id="feishu-preview"></pre></details>
+      </details>
+      <p class="section-description">“手动发送”会发送有效场次，跳过已送达的收件人。“重新发送”会向勾选收件人再次投递已发送记录，并标明历史观察；原回执与重发记录均保留。两种操作均无需开启自动通知。</p>
+      <p id="notification-summary" class="section-description">正在读取通知记录…</p>
+      <div class="notification-pagination"><span id="notification-page-label">最近的记录</span><div><button id="notification-latest" hidden>返回最新记录</button><button id="notification-older" disabled>更早的记录</button></div></div>
+      <ul id="notification-list" class="notification-list"></ul>
+    </section>
+    <section id="view-activity" class="view" role="tabpanel" aria-labelledby="tab-activity" hidden>
+      <div class="page-heading"><div><h1>运行记录</h1><p>最近 20 条监测与操作记录。</p></div></div>
+      <ul id="events" class="events"><li>正在读取记录…</li></ul>
+    </section>
+    <footer><span id="connection" role="status">连接中…</span><span>电脑睡眠或服务退出时，监测停止。</span></footer>
+  </main>
+</body>
+</html>

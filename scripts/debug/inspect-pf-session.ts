@@ -1,7 +1,7 @@
 // Read-only structural probe. Never print field values, cookies or account text.
 import {chromium} from 'playwright';
 import {existsSync} from 'node:fs';
-const browser=await chromium.launch({channel:'msedge',headless:false,chromiumSandbox:true,timeout:30000});
+const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:false,chromiumSandbox:true,timeout:30000});
 try {
  const file='.local/sessions/playfootball.json';
  const context=await browser.newContext(existsSync(file)?{storageState:file}:{});

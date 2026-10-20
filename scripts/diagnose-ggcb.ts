@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
-const browser = await chromium.launch({channel:'msedge',headless:true,chromiumSandbox:true,timeout:30000});
+const browser = await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true,timeout:30000});
 try {
  const page = await browser.newPage({viewport:{width:1280,height:1000},locale:'en-GB',timezoneId:'Europe/London'});
  await page.goto('https://ggcb.co.uk/booking/6-a-side-3g-half-pitch/',{waitUntil:'domcontentloaded',timeout:35000}).catch(e=>console.log(e.message.split('\n')[0]));

@@ -4,8 +4,9 @@ import { targetDates } from '../domain.ts';
 import type { ProviderSession } from '../browser.ts';
 import { statSync } from 'node:fs';
 import {loadAuth} from '../auth-runtime.ts';
+import type {CouncilDefaults} from '../council-defaults.ts';
 
-export async function scanCouncil(page: Page, policy: Policy, session: ProviderSession): Promise<ScanResult> {
+export async function scanCouncil(page: Page, policy: Policy, session: ProviderSession,defaults?:CouncilDefaults): Promise<ScanResult> {
   const pageModule = new URL('../council-page.ts',import.meta.url);
   const version = String(statSync(pageModule).mtimeMs);
   const { councilUserPage } = await import(`${pageModule.href}?v=${version}`) as typeof import('../council-page.ts');
@@ -16,7 +17,18 @@ export async function scanCouncil(page: Page, policy: Policy, session: ProviderS
   const login = auth.password || (!!gate && !auth.authenticated);
   if (login) session.status = 'LOGIN_REQUIRED';
   else if(auth.authenticated)session.status='AUTHENTICATED';
-  const form = page.frames().find(frame => frame !== page.mainFrame());
+  let form = page.frames().find(frame => frame !== page.mainFrame());
+  if(!login&&defaults&&form&&!await form.getByRole('heading',{name:'Booking a pitch',exact:true}).count()){
+    const module=new URL('../council-setup.ts',import.meta.url);
+    const {prepareCouncil}=await import(`${module.href}?v=${statSync(module).mtimeMs}`) as typeof import('../council-setup.ts');
+    const prepared=await prepareCouncil(page,defaults,session,'AUTOMATION');session.assertAutomatic();
+    if(prepared.stage!=='CALENDAR'){
+      if(prepared.stage!=='WAITING')session.mode='MANUAL_CONTROL';
+      else session.nextScanAt=Date.now()+60000;
+      return {status:'PARTIAL',observations:[],coverage:targetDates(policy).map(date=>({date,status:'UNKNOWN',note:'暂无信息：官网日历尚不可查询'})),summary:prepared.message};
+    }
+    await session.saveSession();form=page.frames().find(frame=>frame!==page.mainFrame());
+  }
   if (form && await form.getByRole('heading',{name:'Booking a pitch',exact:true}).count()) {
     const calendarModule=new URL('./council-calendar.ts',import.meta.url);
     const {scanCouncilCalendar}=await import(`${calendarModule.href}?v=${statSync(calendarModule).mtimeMs}`) as typeof import('./council-calendar.ts');
@@ -54,9 +66,10 @@ export async function scanCouncil(page: Page, policy: Policy, session: ProviderS
     sizes: Array.from(document.querySelectorAll('label')).map(el=>(el.textContent||'').trim()).filter(t=>t==='Third'),
     hasCalendar: !!document.querySelector('[role=grid],.ui-datepicker,.fc,[class*=calendar]')
   })).catch(()=>null) : null;
-  if(!login)session.mode='MANUAL_CONTROL';
+  if(!login&&signals?.sizes.length)session.mode='MANUAL_CONTROL';
+  if(!login&&!signals?.sizes.length)session.nextScanAt=Date.now()+60000;
   // Until the authenticated form is verified, never infer inventory from arbitrary form text.
   return { status: login ? 'LOGIN_REQUIRED' : 'PARTIAL', observations: [],
     coverage: targetDates(policy).map(date => ({ date, status: 'UNKNOWN', note: login ? '需要手动登录后读取日历' : '登录后页面已可访问，场地及日历结构待验证' })),
-    summary: login ? '已到达账号门槛。请使用控制台自动登录，或手动接管完成官网登录。' : signals?.sizes.length ? `登录后已验证${signals.pitch || 'Stepney Green'}及Third选项。请在官网完成个人资料后停在Book pitch日历；当前不判断库存。` : '页面已可访问；请在官网确认Stepney Green三分之一场及资料，进入Book pitch日历后恢复监测。' };
+    summary: login ? '暂无信息：官网要求登录，将尝试已保存账号；需要验证码时交由人工完成。' : signals?.sizes.length ? `已验证${signals.pitch || 'Stepney Green'}及Third选项；暂无信息，请补全尚未保存的默认资料，空闲后将自动重试。` : '暂无信息：官网日历尚未显示或暂不可查询，将保持自动监测重试。' };
 }

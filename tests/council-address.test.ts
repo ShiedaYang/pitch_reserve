@@ -10,7 +10,7 @@ test('postcode preferences normalize and reject invalid input',()=>{
  assert.deepEqual(parseAddressDefault({postcode:'e141aa'}),{version:1,postcode:'E14 1AA'});assert.throws(()=>parseAddressDefault({postcode:'invalid'}));
 });
 test('address lookup never guesses among multiple results, remembers exact choices and rejects stale results',async()=>{
- const root=await mkdtemp(join(tmpdir(),'pitch-address-'));const browser=await chromium.launch({channel:'msedge',headless:true,chromiumSandbox:true,timeout:30000});
+ const root=await mkdtemp(join(tmpdir(),'pitch-address-'));const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true,timeout:30000});
  try {
   const page=await browser.newPage();await page.setContent('<iframe></iframe>');const form=page.frames()[1];
   await form.setContent('<input id="postcodeCustomerEntry" value="E15 1AA"><select id="addressSelector"><option value="old">Old address E15 1AA</option></select><button onclick="document.body.dataset.submitted=\'yes\'">Next</button>');

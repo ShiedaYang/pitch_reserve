@@ -24,6 +24,7 @@ test('half-hour grid keeps 18:00 and excludes nearby inventory and 18:30', () =>
   const observations = mapCalendar({ label:'26th - 1st Nov', headers:['Mon 26th','Tue 27th'], rows:[['18:00\nAvailable nearby','18:30\n60 min\n£70.00'],['18:00\n60 min\n£70.00']] }, resources[3], '2026-10-15');
   assert.equal(observations.length, 2);
   assert.equal(isCandidate(observations[0]), false);
+  assert.equal(observations[0].availability,'UNAVAILABLE');assert.equal(observations[0].price,null);
   assert.equal(isCandidate(observations[1]), true);
   assert.equal(observations[1].date, '2026-10-27');
   assert.throws(() => mapCalendar({ label:'Oct', headers:['Mon 26th'], rows:[] }, resources[3], '2026-10-15'), /不一致/);
@@ -38,7 +39,7 @@ test('handoff cancels automated steps and waits for the in-flight work to drain'
   session.mode = 'AUTOMATION'; await session.exclusive(async () => {});
 });
 test('read-only calendar scan never follows a bookable slot and maps actual DOM row boundaries', async () => {
-  const browser = await chromium.launch({ channel:'msedge', headless:true, chromiumSandbox:true, timeout:30000 });
+  const browser = await chromium.launch({ channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined), headless:true, chromiumSandbox:true, timeout:30000 });
   try {
     const page = await browser.newPage();
     await page.setContent(`<div class="bookings-calendar"><div class="bookings-calendar-date"><button class="bookings-calendar-picker">12th - 18th Oct</button><button disabled><svg data-icon="chevron-right"></svg></button></div><div class="bookings-calendar-weekday">Thu<br>15th</div><div class="bookings-calendar-weekday">Fri<br>16th</div><div class="bookings-calendar-scroll-calendar-content-wrapper"><div class="booking-slot"><button onclick="document.body.dataset.booked='yes'">18:00<br>60 min<br>£75.00</button></div><div class="clearfix"></div><div class="booking-slot">18:00<br>Booked</div><div class="clearfix"></div></div></div>`);
@@ -59,19 +60,19 @@ test('SQLite keeps latest results and cannot enable automatic holds', () => {
   } finally { store.close(); rmSync(dir, { recursive:true, force:true }); }
 });
 
-test('slot handoff only opens a fixed resource entry from a current available observation',async()=>{
+test('slot link metadata uses a fixed official URL and never opens or pauses the server browser',async()=>{
   const store=new Store(':memory:');const monitor=new Monitor(store,'.local/test-unused');const opened:string[]=[];
   try {
     const session=monitor.sessions.get('playfootball')!;session.manual=async url=>{session.mode='MANUAL_CONTROL';opened.push(url!);};
     await assert.rejects(monitor.openSlot(resources[3].id,'2026-11-05','18:00'),/观察已更新/);
     store.saveScan(resources[3],{status:'PARTIAL',coverage:[],observations:[{resourceId:resources[3].id,date:'2026-11-05',start:'18:00',availability:'AVAILABLE',duration:60,price:'£110.00',note:'fixture',bookingUrl:'https://untrusted.example.invalid/checkout'}],summary:'fixture'});
     await assert.rejects(monitor.openSlot('https://untrusted.example.invalid','2026-11-05','18:00'),/不存在/);
-    const result=await monitor.openSlot(resources[3].id,'2026-11-05','18:00');assert.equal(result.url,resources[3].url);assert.deepEqual(opened,[resources[3].url]);assert.equal(session.mode,'MANUAL_CONTROL');assert.equal(store.policy().autoHold,false);
+    const result=await monitor.openSlot(resources[3].id,'2026-11-05','18:00');assert.equal(result.url,resources[3].url);assert.deepEqual(opened,[]);assert.equal(session.mode,'AUTOMATION');assert.equal(store.policy().autoHold,false);
   }finally{store.close();}
 });
 
 test('Council address editor pauses monitoring without changing or submitting personal fields', async () => {
-  const browser = await chromium.launch({ channel:'msedge', headless:true, chromiumSandbox:true, timeout:30000 });
+  const browser = await chromium.launch({ channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined), headless:true, chromiumSandbox:true, timeout:30000 });
   try {
     const context = await browser.newContext(); let navigations=0;
     await context.route(resources[1].url,route=>{navigations++;return route.fulfill({contentType:'text/html',body:'<iframe></iframe>'});});
@@ -99,6 +100,6 @@ test('Council address editor pauses monitoring without changing or submitting pe
     assert.equal(await frame.locator('body').getAttribute('data-submitted'),null);
     await frame.locator('form').evaluate(el=>(el as HTMLElement).hidden=true); session.mode='AUTOMATION';
     const hidden = await scanCouncil(page,policy,session);
-    assert.equal(session.mode,'MANUAL_CONTROL'); assert.ok(!hidden.summary.includes('地址下拉框'));
+    assert.equal(session.mode,'AUTOMATION'); assert.match(hidden.summary,/暂无信息/); assert.ok(!hidden.summary.includes('地址下拉框'));
   } finally { await browser.close(); }
 });

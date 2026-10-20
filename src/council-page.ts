@@ -1,8 +1,8 @@
 import type { Page } from 'playwright';
 import type { ProviderSession } from './browser.ts';
 
-// Council's wizard belongs to the user until its contact/eligibility steps are
-// complete. Reuse the foreground booking tab instead of navigating a second one.
+// Reuse the existing booking wizard so saved defaults and human input survive;
+// never navigate a second tab away from the user's partially completed form.
 export async function councilUserPage(session: ProviderSession): Promise<Page | undefined> {
   if (session.id !== 'council') return;
   const pages = session.context?.pages().filter(page => {

@@ -42,6 +42,10 @@ export async function scanCouncilCalendar(form:Frame,policy:Policy,session:Provi
       session.assertAutomatic(); await form.locator('#time_selector a.back').click();
     }
     await form.locator('#booking_day_selector:visible').waitFor();
+    await form.waitForFunction(()=>{
+      const days=Array.from(document.querySelectorAll('#booking_day_selector .carousel-item.active #week-cal .bds-day'));
+      return days.length>0&&days.every(day=>(day.querySelector('.day')?.textContent||'').trim()&&(day.querySelector('.date')?.textContent||'').trim());
+    },undefined,{timeout:12000});
   };
   try {
     await back();
@@ -92,8 +96,9 @@ export async function scanCouncilCalendar(form:Frame,policy:Policy,session:Provi
   } catch(error) {
     session.assertAutomatic(); boundary=(error instanceof Error && /Timeout/.test(error.name)?'官网日期或时段加载超时':error instanceof Error && /^Council/.test(error.message)?error.message:'官网日历结构待复核')+`（${step}）`;
   }
+  if(!read.size&&boundary)session.nextScanAt=Date.now()+60000;
   const coverage=dates.map(date=>({date,status:read.has(date)?'READ' as const:'UNKNOWN' as const,note:read.has(date)?'已读取官网18:00状态；可选时段的租期和报价待核实':unavailableDays.has(date)?'官网日期标为UNAVAILABLE；未开放、已满或其他原因未区分':boundary || '尚未读取到该日期的18:00状态'}));
   return {status:read.size===dates.length?'OK':'PARTIAL',observations,coverage,
     navigation:`已验证Stepney Green Third；查看${visited.size}/${dates.length}个目标日期，${Math.min(pages+1,14)}组日期。${unavailableDays.size}个日期显示UNAVAILABLE，原因未说明。${boundary || '仅使用日期、Back及Earlier/Later导航。'}`,
-    summary:`已读取${read.size}/${dates.length}个18:00状态；${observations.filter(o=>o.availability==='AVAILABLE').length}个日期的18:00可选，租期与报价待核实。${unavailableDays.size}个日期标为UNAVAILABLE（原因未明）。未选择时间或Confirm。${boundary}`};
+    summary:`${read.size?'':'暂无信息；'}已读取${read.size}/${dates.length}个18:00状态；${observations.filter(o=>o.availability==='AVAILABLE').length}个日期的18:00可选，租期与报价待核实。${unavailableDays.size}个日期标为UNAVAILABLE（原因未明）。未选择时间或Confirm。${boundary}`};
 }

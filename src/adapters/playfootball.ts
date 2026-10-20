@@ -32,8 +32,9 @@ export function mapCalendar(snapshot: CalendarSnapshot, resource: Resource, refe
     for (const text of snapshot.rows[i]) {
       const start = text.match(/\b(\d{2}:\d{2})\b/)?.[1]; if (start !== '18:00') continue;
       const duration = text.match(/(\d+)\s*min/i)?.[1]; const price = text.match(/£\s*\d[\d,]*(?:\.\d{2})?/)?.[0] || null;
-      const availability = /Available nearby/i.test(text) ? 'NEARBY' : /Booked/i.test(text) ? 'BOOKED' : duration && price ? 'AVAILABLE' : 'UNKNOWN';
-      result.push({ resourceId: resource.id, date, start, duration: duration ? Number(duration) : null, price, availability, note: availability === 'NEARBY' ? '附近其他场地，不是本场可订' : '普通单次租场页面观察；未选场或创建预订' });
+      const unavailableHere = /Available nearby/i.test(text);
+      const availability = unavailableHere ? 'UNAVAILABLE' : /Booked/i.test(text) ? 'BOOKED' : duration && price ? 'AVAILABLE' : 'UNKNOWN';
+      result.push({ resourceId: resource.id, date, start, duration: unavailableHere ? null : duration ? Number(duration) : null, price:unavailableHere?null:price, availability, note: unavailableHere ? '该场地该时段无可订场次' : '普通单次租场页面观察；未选场或创建预订' });
     }
   }
   return result;
