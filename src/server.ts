@@ -1,5 +1,9 @@
 import { createServer } from 'node:http';
 import {networkAccess} from './network-access.ts';
+import {preflightBrowser} from './browser-preflight.ts';
+import {diagnoseError} from './activity-log.ts';
+import {DesktopProxy,desktopUpstream} from './desktop-proxy.ts';
+import {browserOptions,manualBrowserUrl} from './runtime-config.ts';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -17,9 +21,16 @@ const local = resolve(process.env.PITCH_DATA_DIR||join(root, '.local')); mkdirSy
 const store = new Store(join(local, 'monitor.sqlite')); const monitor = new Monitor(store, local,true);
 await monitor.restoreCredentials();
 const feishu=new FeishuIntegration(store,new FeishuSettingsRepository(local));await feishu.restore();
-function consoleState(){const state=monitor.state();return {...state,feishu:feishu.state(),notifications:{...state.notifications,items:feishu.decorate(state.notifications.items),deliveryConfigured:feishu.state().configured}};}
+const desktop=new DesktopProxy(desktopUpstream(),()=>store.event('远程桌面连接失败',{level:'ERROR',stage:'REMOTE_DESKTOP',code:'DESKTOP_UNAVAILABLE',details:{reason:'无法连接本机 noVNC 服务',remedy:'检查桌面进程日志，使用 sh start-desktop.sh 启动服务'}}));
+function desktopState(){return {configured:!!desktop.upstream,url:manualBrowserUrl(),headless:!!browserOptions().headless,displayAvailable:!!process.env.DISPLAY};}
+function consoleState(){const state=monitor.state();return {...state,desktop:desktopState(),logging:{retained:5000,fileError:store.activity.fileError},feishu:feishu.state(),notifications:{...state.notifications,items:feishu.decorate(state.notifications.items),deliveryConfigured:feishu.state().configured}};}
 const network=networkAccess();const {port,origin}=network;
 const allowedHosts=network.hosts,allowedOrigins=network.origins;
+// Warm the scanner's actual persistent context once. Reuse it during monitoring;
+// missing binaries/dependencies must fail before listening or starting retries.
+store.event('正在检查运行环境',{stage:'STARTUP',code:'STARTUP_BEGIN',details:{headless:!!browserOptions().headless,displayAvailable:!!process.env.DISPLAY,remoteDesktopConfigured:!!desktop.upstream}});
+try{await preflightBrowser(()=>monitor.sessions.get('ggcb')!.getContext());}
+catch(error){const issue=diagnoseError(error);store.event('启动检查失败',{level:'ERROR',stage:'STARTUP',code:issue.code,details:issue});await Promise.all([feishu.close(),monitor.close()]);store.close();throw error;}
 const token = randomBytes(32).toString('hex');
 function validToken(input: unknown) { return typeof input === 'string' && input.length === token.length && timingSafeEqual(Buffer.from(input), Buffer.from(token)); }
 const staticFiles: Record<string, [string, string]> = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'] };
@@ -28,10 +39,15 @@ const server = createServer(async (req, res) => {
   res.setHeader('Referrer-Policy', 'no-referrer'); res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
   const json = (code: number, data: unknown) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); };
-  if (!network.allows(req.socket.remoteAddress)) { json(403, {error:'????????????????'}); return; }
+  if (!network.allows(req.socket.remoteAddress)) { json(403, {error:'此地址未获准访问控制台'}); return; }
   if (!allowedHosts.has(req.headers.host??'') || (req.headers.origin && !allowedOrigins.has(req.headers.origin)) || req.headers['sec-fetch-site'] === 'cross-site') { json(403, { error: '仅接受已配置控制台来源的请求' }); return; }
   try {
     const url = new URL(req.url || '/', origin);
+    if(url.pathname.startsWith('/desktop/')){desktop.http(req,res,url);return;}
+    if(req.method==='GET'&&url.pathname==='/api/desktop'){json(200,{...desktopState(),...await desktop.check()});return;}
+    if(req.method==='GET'&&url.pathname==='/api/events'){
+      try{const value=(key:string)=>url.searchParams.get(key)??undefined;json(200,store.eventPage({limit:value('limit')===undefined?undefined:Number(value('limit')),before:value('before')===undefined?undefined:Number(value('before')),level:value('level'),provider:value('provider')}));}catch{json(400,{error:'运行记录查询参数无效'});}return;
+    }
     if (req.method === 'GET' && staticFiles[url.pathname]) {
       const [file, type] = staticFiles[url.pathname]; res.writeHead(200, { 'Content-Type': type }); res.end(readFileSync(join(root, 'public', file))); return;
     }
@@ -74,19 +90,28 @@ const server = createServer(async (req, res) => {
     if (match && providerIds.includes(match[1] as ProviderId)) { const result=await monitor.action(match[1] as ProviderId, match[2], body.resourceId); json(200, { ok: true,...(result??{}) }); return; }
     json(404, { error: '接口不存在；自动锁位未实现' });
   } catch (error) {
+    const issue=diagnoseError(error);store.event('控制台操作未完成',{level:'WARN',stage:'CONSOLE_ACTION',code:issue.code,details:issue});
     const message = error instanceof Error && /^(?:普通浏览器|请先关闭普通浏览器|飞书|Council默认选项|请先登录Council|未能确认官网开放时段|官网(?:场地|队伍)选项结构|本地凭据保存失败|请输入(?:有效账号和密码|账号和密码)|该网站正在处理上一项操作|该网站浏览器正在重启|浏览器重启失败|场馆不存在|场馆或场次不存在|不支持的操作|已暂停，等待人工接管|页面仍显示登录表单|该场次观察已更新)/.test(error.message) ? error.message : '操作失败，请检查浏览器是否可打开，或稍后重试';
     json(400, { error: message });
   }
 });
+server.on('upgrade',(req,socket,head)=>{
+  const path=new URL(req.url||'/',origin).pathname;
+  if(!network.allows(req.socket.remoteAddress)||!allowedHosts.has(req.headers.host||'')||!req.headers.origin||!allowedOrigins.has(req.headers.origin)||req.headers['sec-fetch-site']==='cross-site'||path!=='/desktop/websockify'||req.headers.upgrade?.toLowerCase()!=='websocket'){
+    socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');return;
+  }
+  desktop.upgrade(req,socket,head);
+});
 server.listen(port, network.host, () => {
   writeFileSync(join(local, 'server.json'), JSON.stringify({ pid: process.pid, url: origin,port,host:network.host,localUrl:network.localUrl,lanUrls:network.lanUrls,allowedSubnets:network.allowedSubnets }));
-  store.event('控制台启动：只读监测，自动锁位关闭'); console.log(`Pitch console: ${network.localUrl}`);
+  store.event('控制台启动：只读监测，自动锁位关闭',{stage:'STARTUP',code:'STARTUP_READY'}); console.log(`Pitch console: ${network.localUrl}`);
   for(const url of network.lanUrls)console.log(`LAN access: ${url}`);
   console.log(network.host==='127.0.0.1'?'Access: local machine only':`Access: local machine + ${network.allowedSubnets.join(', ')||'no allowed LAN subnets (check network interfaces)'}`);
   if (process.env.PITCH_START_PAUSED === '1') for (const s of monitor.sessions.values()) s.mode = 'PAUSED';
   monitor.start();
   feishu.start();
 });
-server.on('error', error => { console.error(error.message); process.exitCode = 1; });
-async function shutdown() { server.close(); await Promise.all([feishu.close(),monitor.close()]); store.close(); process.exit(0); }
+server.on('error', error => { const issue=diagnoseError(error);store.event('控制台监听失败',{level:'ERROR',stage:'STARTUP',code:'LISTEN_FAILED',details:{reason:(error as NodeJS.ErrnoException).code==='EADDRINUSE'?'服务端口已被占用':issue.reason,remedy:'停止已有控制台进程，或更换 PORT 后重试'}});console.error('Console could not listen. Check the configured host/port and runtime logs.');void shutdown(1); });
+let stopping=false;
+async function shutdown(code=0) { if(stopping)return;stopping=true;store.event('正在停止监测并保存会话',{stage:'SHUTDOWN',code:'STOPPING'});server.close(); await Promise.all([feishu.close(),monitor.close()]);store.event('服务已正常停止',{stage:'SHUTDOWN',code:'STOPPED'});store.close(); process.exit(code); }
 process.on('SIGINT', () => { void shutdown(); }); process.on('SIGTERM', () => { void shutdown(); });

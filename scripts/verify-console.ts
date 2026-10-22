@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
-const base = 'http://127.0.0.1:4318';
+const base = process.env.PITCH_CONSOLE_URL||'http://127.0.0.1:4318';
 const response = await fetch(`${base}/api/state`); assert.equal(response.status, 200);
 const state = await response.json(); assert.equal(state.readOnly, true); assert.equal(state.policy.autoHold, false); assert.equal(state.resources.length, 4);
 assert.equal(typeof state.notifications.deliveryConfigured,'boolean');assert.ok(Array.isArray(state.notifications.items));assert.ok(state.feishu);assert.ok(!('appSecret' in state.feishu));
@@ -34,6 +34,11 @@ try {
  await page.route(`${base}/api/feishu/validate`,route=>{feishuValidations++;preview.feishu.validatedAt=new Date().toISOString();return route.fulfill({json:{message:'飞书应用凭据验证成功，未发送消息（界面验证）'}});});
  preview.providers=preview.providers.map((provider:{id:string})=>({...provider,nativeVerificationActive:false,mode:['council','playfootball'].includes(provider.id)?'MANUAL_CONTROL':'AUTOMATION',manualBrowserUrl:provider.id==='playfootball'?'https://desktop.example.invalid/vnc.html':null,headless:false,attention:provider.id==='playfootball'?{kind:'HUMAN_VERIFICATION',message:'官网出现人机验证，请手动接管完成验证；验证期间停止自动刷新。',at:new Date().toISOString()}:null,busy:false,hasCredentials:true,hasSavedCredentials:true,savedUsername:`${provider.id}@example.invalid`,credentialError:null}));
  await page.route(`${base}/api/state`,route=>route.fulfill({json:preview}));
+ preview.desktop={configured:true,url:'/desktop/vnc.html?autoconnect=true&resize=scale&path=desktop/websockify',headless:false,displayAvailable:true};preview.logging={retained:5000,fileError:null};
+ const activityFixtures=[{id:100,at:new Date().toISOString(),message:'Westferry：只读检查失败（界面验证示例）',level:'ERROR',provider:'playfootball',resourceId:'westferry-5',stage:'CALENDAR',code:'TIMEOUT',runId:'scan-example-100',details:{reason:'官网请求或日历加载超时',remedy:'页面重新打开后仍超时，请在远程浏览器手动接管。',attempt:2,durationMs:61234,nextRetryAt:new Date(Date.now()+60000).toISOString()}},{id:99,at:new Date().toISOString(),message:'GGCB：部分日期尚未开放，暂无信息（界面验证示例）',level:'WARN',provider:'ggcb',resourceId:'ggcb-half',stage:'SCAN_COMPLETE',code:'PARTIAL_COVERAGE',runId:'scan-example-99',details:{readDays:8,targetDays:35,unknownDays:27,available:1,priced:8,durationMs:12000}},{id:98,at:new Date().toISOString(),message:'控制台启动：只读监测，自动锁位关闭（界面验证示例）',level:'INFO',provider:'system',stage:'STARTUP',code:'STARTUP_READY',details:{}}];
+ let activityFail=false;
+ await page.route(`${base}/api/events?*`,route=>{if(activityFail)return route.fulfill({status:500,json:{error:'fixture error'}});const query=new URL(route.request().url()).searchParams;let items=query.has('before')?[{...activityFixtures[2],id:1}]:activityFixtures;items=items.filter(row=>(!query.get('level')||query.get('level')===row.level)&&(!query.get('provider')||query.get('provider')===row.provider));return route.fulfill({json:{items,nextCursor:!query.has('before')&&items.length?98:null,retained:5000,fileError:null}});});
+ await page.route(`${base}/api/desktop`,route=>route.fulfill({json:{...preview.desktop,reachable:true}}));
  await page.route(`${base}/api/providers/ggcb/forget-credentials`,route=>{const provider=preview.providers.find((provider:{id:string})=>provider.id==='ggcb');provider.hasCredentials=false;provider.hasSavedCredentials=false;provider.savedUsername=null;return route.fulfill({json:{message:'测试账号已清除'}});});
  await page.goto(base); await page.locator('.resource').last().waitFor({state:'attached'});
  assert.equal(await page.locator('.resource').count(),4);
@@ -45,6 +50,12 @@ try {
  assert.equal(await page.locator('#view-accounts').isVisible(),false);
  for(const row of await page.locator('#calendar tr[data-date-row]').all())assert.equal(await row.locator('td').count(),4);
  const calendarBox=await page.locator('.table-scroll').boundingBox();assert.ok(calendarBox!.y<500);
+ await page.getByRole('tab',{name:'账号与接管'}).click();
+ await page.locator('#desktop-check').click();await page.waitForFunction(()=>document.querySelector('#desktop-result')?.textContent?.includes('可连接'));assert.match(await page.locator('#desktop-open').getAttribute('href')||'',/^\/desktop\/vnc.html/);
+ mkdirSync('.impeccable/review',{recursive:true});await capture('.impeccable/review/remote-desktop-desktop.png');await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);await capture('.impeccable/review/remote-desktop-mobile.png');await page.setViewportSize({width:1440,height:900});
+ await page.getByRole('tab',{name:'运行记录'}).click();await page.locator('#events .event-body').last().waitFor();assert.equal(await page.locator('#events > li').count(),3);await page.locator('#events details').first().evaluate(el=>(el as HTMLDetailsElement).open=true);await capture('.impeccable/review/activity-desktop.png');await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);await capture('.impeccable/review/activity-mobile.png');await page.setViewportSize({width:1440,height:900});
+ await page.locator('#event-level').selectOption('ERROR');await page.waitForFunction(()=>document.querySelectorAll('#events > li').length===1);assert.match(await page.locator('#events').innerText(),/处理建议/);await page.locator('#event-level').selectOption('');await page.waitForFunction(()=>document.querySelectorAll('#events > li').length===3);await page.locator('#event-older').click();await page.waitForFunction(()=>document.querySelector('#event-page-label')?.textContent?.includes('更早'));assert.equal(await page.locator('#event-older').isDisabled(),true);await page.locator('#event-latest').click();await page.waitForFunction(()=>document.querySelectorAll('#events > li').length===3);
+ activityFail=true;await page.locator('#event-provider').selectOption('feishu');await page.waitForFunction(()=>!document.querySelector<HTMLElement>('#event-error')?.hidden);assert.match(await page.locator('#event-error').innerText(),/读取失败/);activityFail=false;await page.locator('#event-provider').selectOption('');await page.waitForFunction(()=>document.querySelector<HTMLElement>('#event-error')?.hidden===true);
  await page.getByRole('tab',{name:'账号与接管'}).click();
  assert.match(await page.locator('[data-provider-card=council] .session-status').innerText(),/无操作1分钟/);
  const nativeButton=page.locator('[data-action=verify-in-browser]');assert.equal(await nativeButton.count(),1);let nativeCalls=0;const pf=preview.providers.find((provider:{id:string})=>provider.id==='playfootball');const priorAttention=pf.attention;

@@ -10,6 +10,9 @@ node_modules/
 !.env.example
 !.env.sample
 *.local.json
+*.local.sh
+*.local.ps1
+*.local.conf
 *.pem
 *.key
 *.p12

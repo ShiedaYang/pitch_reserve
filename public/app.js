@@ -2,6 +2,7 @@ let state; let token; let pending = new Set(); let policyDirty = false; let poli
 const restartingProviders=new Set();
 let manualSending=null;const resendRequests=new Map();
 let notificationBefore=null;let notificationPage=null;let notificationLoading=false;
+let activityBefore=null,activityPage=null,activityLoading=false,activityError='';
 let feishuDirty=false,feishuRevision=0,feishuSnapshot='',feishuSubmitting=false,feishuOperation='',feishuFeedback=null;
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, x => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
@@ -20,6 +21,7 @@ function setView(name,focus=false){
  document.title='Pitch Reserve · '+tab.textContent;
  if(location.hash!=='#'+name)history.replaceState(null,'','#'+name);
  if(focus)tab.focus();
+ if(name==='activity'&&state)void loadActivity(activityBefore);
 }
 function isStale(resource){return Date.now()-Date.parse(resource.latest?.at)>Math.max(state.policy.intervalMinutes*120000,1800000);}
 function message(text,error=false){$('message').textContent=text;$('message').className=error?'error':'';}
@@ -99,7 +101,30 @@ function render(){if(!state)return;
  $('scan-all').disabled=scanning||!canScan;
  $('scan-all').textContent=scanning?'正在检查…':'立即检查';
  $('scan-all').title=canScan?'检查当前允许自动监测的账号':'所有账号均在处理、暂停或接管中，请在“账号与接管”查看';
- setHTML('events',state.events.map(e=>`<li><time datetime="${esc(e.at)}">${dateFmt(e.at)}</time><span>${esc(e.message)}</span></li>`).join('')||'<li>暂无运行记录。首次监测后会在这里显示。</li>');
+ renderActivity();renderDesktop();
+}
+function renderDesktop(){
+ const d=state.desktop||{};const remote=d.url||state.providers.find(p=>p.manualBrowserUrl)?.manualBrowserUrl;
+ $('desktop-status').textContent=d.headless?'当前运行在无界面模式，服务器不会显示浏览器窗口。':d.configured?'远程桌面已配置，官网浏览器运行在服务器虚拟桌面上。':'当前使用本机图形浏览器。';
+ $('desktop-open').hidden=!remote;if(remote)$('desktop-open').href=remote;
+ $('desktop-help').textContent=d.configured&&!d.headless?'打开远程浏览器后输入桌面密码。先在下方选择网站的“手动接管”；PlayFootball 验证循环时使用“普通浏览器验证”，验证完成后关闭该专用窗口。':'Ubuntu 无桌面环境请按部署说明安装桌面组件，再使用 sh start-desktop.sh 启动。该脚本会切换为有界面模式，并在此提供远程入口。Windows 本机可直接操作工具浏览器。';
+}
+const stageNames={STARTUP:'启动检查',SHUTDOWN:'服务停止',SCAN_START:'开始监测',SCAN_COMPLETE:'监测结果',OPEN_PAGE:'打开官网',CALENDAR:'读取日历',RETRY:'重试',RECOVERY:'恢复监测',LOGIN:'登录',SESSION:'会话检查',BROWSER:'浏览器',MANUAL_CONTROL:'人工接管',DELIVERY:'消息发送',REMOTE_DESKTOP:'远程桌面',CONSOLE_ACTION:'控制台操作',LEGACY:'历史操作',OPERATION:'操作'};
+function renderActivity(){
+ const data=activityPage||{items:state.events||[],nextCursor:null};
+ $('event-summary').textContent=activityLoading?'正在读取…':`保留最近 ${state.logging?.retained||5000} 条 · 本页 ${data.items.length} 条`;
+ $('event-error').hidden=!(activityError||state.logging?.fileError);$('event-error').textContent=activityError||state.logging?.fileError||'';
+ $('event-page-label').textContent=activityBefore===null?'最新记录 · 自动更新':'更早的记录 · 已暂停翻页更新';
+ $('event-latest').hidden=activityBefore===null;$('event-older').disabled=activityLoading||!data.nextCursor;
+ $('event-level').disabled=$('event-provider').disabled=activityLoading;$('event-latest').disabled=activityLoading;
+ const open=new Set([...$('events').querySelectorAll('details[open]')].map(el=>el.dataset.event));
+ setHTML('events',data.items.map(e=>{const d=e.details||{},level=e.level||'INFO';const counts=[['readDays','已读日期'],['targetDays','目标日期'],['unknownDays','暂无信息'],['available','可订场次'],['priced','含价格观察'],['attempt','尝试次数'],['sent','发送成功'],['failed','发送失败']].filter(([key])=>d[key]!==undefined).map(([key,label])=>`${label} ${d[key]}`);if(d.durationMs!==undefined)counts.push(`耗时 ${(d.durationMs/1000).toFixed(1)} 秒`);return `<li><time datetime="${esc(e.at)}">${esc(new Date(e.at).toLocaleString('zh-CN',{timeZone:'Europe/London',hour12:false}))}</time><div class="event-body"><div class="event-meta"><span class="tag ${level==='ERROR'?'event-error':level==='WARN'?'warn':''}">${{INFO:'信息',WARN:'警告',ERROR:'错误'}[level]||esc(level)}</span><span>${esc(providerNames[e.provider]||{system:'控制台',feishu:'飞书通知'}[e.provider]||'控制台')} · ${esc(stageNames[e.stage]||e.stage||'操作')}</span>${e.resourceId?`<span>${esc(state.resources.find(r=>r.id===e.resourceId)?.name||e.resourceId)}</span>`:''}</div><p class="event-message">${esc(e.message)}</p>${d.reason?`<p>原因：${esc(d.reason)}</p>`:''}${d.remedy?`<p>处理建议：${esc(d.remedy)}</p>`:''}${counts.length?`<p class="event-counts">${esc(counts.join(' · '))}</p>`:''}${e.code||e.runId||d.navigation||d.nextRetryAt||d.action?`<details data-event="${esc(e.id)}"><summary>技术详情</summary><dl>${[['诊断代码',e.code],['异常类型',d.errorType],['代码位置',d.location],['检查编号',e.runId],['执行动作',d.action],['日期范围',d.dateFrom&&d.dateFrom+' 至 '+d.dateTo],['日期导航',d.navigation],['下次检测',d.nextRetryAt&&dateFmt(d.nextRetryAt)]].filter(([,value])=>value).map(([label,value])=>`<dt>${label}</dt><dd>${esc(value)}</dd>`).join('')}</dl></details>`:''}</div></li>`;}).join('')||'<li>当前筛选下没有运行记录。</li>');
+ for(const el of $('events').querySelectorAll('details'))if(open.has(el.dataset.event))el.open=true;
+}
+async function loadActivity(before=null){
+ if(activityLoading)return;activityLoading=true;renderActivity();
+ const query=new URLSearchParams({limit:'50'});if(before!==null)query.set('before',before);if($('event-level').value)query.set('level',$('event-level').value);if($('event-provider').value)query.set('provider',$('event-provider').value);
+ try{const response=await fetch('/api/events?'+query);if(!response.ok)throw new Error('运行记录读取失败，请稍后重试。');activityPage=await response.json();activityBefore=before;activityError='';}catch(error){activityError=error.message;}finally{activityLoading=false;renderActivity();}
 }
 function renderNotifications(){
  const data=notificationBefore===null?state.notifications:notificationPage;
@@ -138,7 +163,7 @@ async function loadNotificationPage(before){
  try{const response=await fetch('/api/notifications?limit=50'+(before===null?'':'&before='+encodeURIComponent(before)));if(!response.ok)throw new Error('无法读取通知，请稍后重试');notificationPage=await response.json();notificationBefore=before;renderNotifications();}
  catch(error){message(error.message,true);}finally{notificationLoading=false;renderNotifications();}
 }
-async function refresh(){try{const response=await fetch('/api/state');if(!response.ok)throw new Error();state=await response.json();token=state.csrf;renderPolicy();if(notificationBefore!==null&&!notificationLoading&&!$('view-notifications').hidden)await loadNotificationPage(notificationBefore);render();$('connection').className='';$('connection').textContent='控制台已连接 · '+dateFmt(new Date().toISOString());}catch{$('connection').className='connection-error';$('connection').textContent='连接中断，当前显示上次读取的数据，请检查本地服务。';}}
+async function refresh(){try{const response=await fetch('/api/state');if(!response.ok)throw new Error();state=await response.json();token=state.csrf;renderPolicy();if(notificationBefore!==null&&!notificationLoading&&!$('view-notifications').hidden)await loadNotificationPage(notificationBefore);if(!activityLoading&&activityBefore===null&&!$('view-activity').hidden)await loadActivity(null);render();$('connection').className='';$('connection').textContent='控制台已连接 · '+dateFmt(new Date().toISOString());}catch{$('connection').className='connection-error';$('connection').textContent='连接中断，当前显示上次读取的数据，请检查本地服务。';}}
 document.addEventListener('click',async e=>{
  const navigation=e.target.closest('[data-view],[data-go]');if(navigation){setView(navigation.dataset.view||navigation.dataset.go,true);if(navigation.dataset.scroll)$(navigation.dataset.scroll)?.scrollIntoView({block:'start'});return;}
  const resendButton=e.target.closest('[data-feishu-resend]');if(resendButton){if(manualSending||feishuDirty||feishuSubmitting||state.feishu?.busy)return;const id=resendButton.dataset.feishuResend;manualSending=id;if(!resendRequests.has(id))resendRequests.set(id,crypto.randomUUID());renderNotifications();message('正在重新发送历史记录…');try{const result=await post('/api/feishu/send',{notificationId:id,resend:true,requestId:resendRequests.get(id)});if(result.sent)resendRequests.delete(id);message(result.message,!!result.failed);}catch(error){message(error.message,true);}finally{manualSending=null;await refresh();}return;}
@@ -154,6 +179,9 @@ document.addEventListener('click',async e=>{
 document.addEventListener('input',e=>{const form=e.target.closest('.credential-form');if(form && e.target.name==='username')form.dataset.accountEdited='true';});
 document.addEventListener('submit',async e=>{const form=e.target.closest('.credential-form');if(!form)return;e.preventDefault();const id=form.dataset.provider;if(pending.has(id))return;const username=form.elements.username.value;const password=form.elements.password.value;form.elements.password.value='';pending.add(id);renderProviders();message('正在官网填写账号密码并登录…');try{const result=await post(`/api/providers/${id}/auto-login`,{username,password});if(form.elements.username.value===username)delete form.dataset.accountEdited;message(result.message,result.kind==='FAILED');}catch(error){message(error.message,true);}finally{pending.delete(id);await refresh();}});
 $('available-only').addEventListener('change',render);
+$('event-level').addEventListener('change',()=>void loadActivity(null));$('event-provider').addEventListener('change',()=>void loadActivity(null));
+$('event-latest').addEventListener('click',()=>void loadActivity(null));$('event-older').addEventListener('click',()=>{if(activityPage?.nextCursor)void loadActivity(activityPage.nextCursor);});
+$('desktop-check').addEventListener('click',async()=>{const button=$('desktop-check');button.disabled=true;button.textContent='正在检查…';try{const response=await fetch('/api/desktop');if(!response.ok)throw new Error('连接检查失败，请稍后重试。');const d=await response.json();$('desktop-result').textContent=!d.configured?'远程桌面尚未配置。Ubuntu 请使用 sh start-desktop.sh 启动。':!d.reachable?'无法连接远程桌面。请检查服务器桌面进程日志。':d.headless?'桌面服务可连接，但浏览器仍为无界面模式；请使用 sh start-desktop.sh 重启。':'远程桌面服务可连接。打开后输入桌面密码；若画面无法连接，请检查反向代理的 WebSocket 配置。';}catch(error){$('desktop-result').textContent=error.message;}finally{$('desktop-result').hidden=false;button.disabled=false;button.textContent='检查远程桌面连接';}});
 $('notification-latest').addEventListener('click',()=>{notificationBefore=null;notificationPage=null;renderNotifications();});
 $('notification-older').addEventListener('click',()=>{const data=notificationBefore===null?state.notifications:notificationPage;if(data?.nextCursor)void loadNotificationPage(data.nextCursor);});
 const feishuEdited=()=>{feishuDirty=true;feishuRevision++;feishuFeedback=null;renderFeishu();};

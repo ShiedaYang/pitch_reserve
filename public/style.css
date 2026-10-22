@@ -269,3 +269,6 @@ footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8p
   .tabs button[aria-selected=true]::after { animation: tab-mark 160ms cubic-bezier(.16, 1, .3, 1); }
   @keyframes tab-mark { from { clip-path: inset(0 40%); } to { clip-path: inset(0); } }
 }
+.activity-toolbar{display:flex;align-items:end;gap:20px;flex-wrap:wrap;margin:0 0 20px}.activity-toolbar label{display:grid;gap:6px;min-width:160px}.activity-toolbar p{margin:0 0 9px;color:var(--muted)}
+.events .event-body{min-width:0}.event-meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:12px}.event-body p{margin:7px 0;overflow-wrap:anywhere}.event-message{font-weight:600}.event-counts{color:var(--muted);font-variant-numeric:tabular-nums}.event-error{color:var(--red);background:#fbeeee}.event-body details{margin-top:10px}.event-body dl{display:grid;grid-template-columns:90px 1fr;gap:6px 12px;font-size:12px}.event-body dt{color:var(--muted)}.event-body dd{margin:0;overflow-wrap:anywhere}.remote-desktop{margin-bottom:24px}.remote-desktop h2{margin-top:0}
+@media(max-width:600px){.activity-toolbar{gap:14px}.activity-toolbar label{min-width:0;flex:1}.activity-toolbar p{width:100%}.event-body dl{grid-template-columns:72px 1fr}}

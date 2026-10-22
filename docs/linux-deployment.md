@@ -25,6 +25,17 @@ Windows 使用 `./start.ps1`，Linux 使用 `sh start.sh`；两者调用同一�
 
 ## 仅局域网访问
 
+启动前会用实际扫描器的专用浏览器检查运行环境，成功后复用同一上下文；缺少浏览器、系统库或启动环境异常时会退出并打印修复方法，不启动场地重试循环。显式设置 `PITCH_START_PAUSED=1` 时跳过浏览器检查并保持网站监测暂停，适合只打开控制台配置；该选项不会关闭已经启用的飞书通知。
+
+如果日志出现 `Executable doesn't exist ... chromium_headless_shell-...`，表示当前 Playwright 版本要求的无头浏览器没有装在服务用户可见的位置。先停止进程，在项目目录中以运行服务的同一用户执行：
+
+```sh
+npm ci
+npx playwright install --with-deps chromium
+```
+
+再使用原参数启动。完整 `chromium` 安装包含普通浏览器及无头组件；不要把下载步骤整条改成 `sudo npx ...`，否则可能装到 root 的缓存。系统依赖需要提权时按 CLI 提示处理。更新依赖、切换服务用户，或改变 `PLAYWRIGHT_BROWSERS_PATH` 后，应在相同用户与路径设置下重新安装；`npm ci` 本身不会下载浏览器。默认缓存位于服务用户的 `~/.cache/ms-playwright`。安装行为参见 [Playwright 官方说明](https://playwright.dev/docs/browsers#install-browsers)。
+
 局域网模式监听 IPv4 的 0.0.0.0，并在启动日志打印本机地址、每个私有网卡的访问地址，以及允许的网段；不发送 mDNS/UDP 广播，不自动打开防火墙。其他设备使用日志中的 LAN access 地址访问。
 
 默认仅接受本机与服务器私有网卡所属网段的 TCP 对端，拒绝公网地址及其他私有网段。可用 PITCH_LAN_CIDRS 进一步明确允许的 IPv4 私有 CIDR，以逗号分隔，例如：
@@ -131,3 +142,63 @@ node scripts/verify-console.ts
 `.local/native-verification/playfootball.json` 只记录工具启动的验证进程 ID，避免服务重启后同时占用 profile；程序不会根据该文件杀进程。服务重启时验证窗口可继续保留，关闭后再自动接回；主动暂停不会被覆盖。官网仍可能拒绝接回后的自动化，此时继续人工接管，需要场馆支持的接入方式。
 
 进程保护以验证窗口实际存活为前提。systemd 等管理器可能在停止服务时一并结束子进程，建议先完成人工验证再重启服务；程序下次启动会在验证进程已结束后接回监测，不会尝试控制已经退出的窗口。
+## 远程查看服务器浏览器（Ubuntu 直接启动）
+
+`PITCH_HEADLESS=1` 适合无人值守读取，但不会产生可查看的窗口。需要登录、补资料或处理人机验证时，使用下面的虚拟桌面启动方式。Windows 仍使用 `start.ps1`，本机直接操作浏览器；日志、账号、通知和只读监测功能保持一致。
+
+在项目目录，以实际运行服务的普通用户执行一次：
+
+```sh
+npm ci
+sudo apt-get update
+sudo apt-get install -y xvfb x11vnc openbox novnc websockify xauth
+npx playwright install --with-deps chromium
+mkdir -p .local/desktop
+chmod 700 .local/desktop
+x11vnc -storepasswd .local/desktop/vnc.pass
+chmod 600 .local/desktop/vnc.pass
+```
+
+桌面密码在终端交互输入，不放入命令行或控制台配置。若设置了 `PITCH_DATA_DIR`，密码文件应位于该目录的 `desktop/vnc.pass`，不能使用其他账户的目录。
+
+先用 `sh stop.sh` 正常停止原服务（自定义数据目录时传入相同的 `PITCH_DATA_DIR`），然后启动：
+
+```sh
+PITCH_HOST='<服务器的局域网IP>' \
+PITCH_LAN_CIDRS='<允许访问的客户端或代理CIDR>' \
+PITCH_PUBLIC_ORIGIN='http://<用户访问的主机>:<对外端口>' \
+sh start-desktop.sh
+```
+
+这个脚本设置专用 `DISPLAY=:99`、私有 Xauthority 和 `PITCH_HEADLESS=0`，依次启动 Xvfb、Openbox、x11vnc、websockify，再启动原控制台。桌面密码开启；X11 禁止 TCP。VNC 5901 和 noVNC 6080 仅在 loopback 监听，不需要开放这些端口。通过现有控制台的 `/desktop/` 访问桌面，并沿用控制台的来源、Host 与局域网访问限制。它有权限操作该服务用户的浏览器和已登录会话，仅给可信内网用户访问。
+
+进入“账号与接管 → 服务器浏览器 → 打开远程浏览器”，输入桌面密码。需要操作哪个网站，先点击该网站的“手动接管”。PlayFootball 验证循环时点击“普通浏览器验证”；手动验证后关闭**整个专用验证窗口**，工具会接回读取。工具不会代答验证码。虚拟桌面不会保证官网放行服务器 IP，持续拒绝时仍需联系官网。
+
+`Ctrl+C` 或 `sh stop.sh` 会先停止控制台并保存会话，再关闭这次启动的桌面子进程。普通验证窗口仍开着时请先正常关闭。不要重复启动相同 display/端口；脚本会检查冲突，不关闭其他进程。可用 `PITCH_DESKTOP_DISPLAY`、`PITCH_VNC_PORT`、`PITCH_DESKTOP_PORT` 调整；noVNC 安装位置可用 `PITCH_NOVNC_DIR` 指定。当前为前台启动，关闭 SSH 会话前应使用 tmux，或按下文配置服务管理器。
+
+如果经由反向代理访问，代理必须转发 WebSocket，保持外部 Host。Nginx 示例（放入对应 server 的 location；上游与当前部署一致）：
+
+```nginx
+location / {
+    proxy_pass http://<后端服务器IP>:<后端服务端口>;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 3600s;
+    proxy_buffering off;
+}
+```
+
+以上占位符必须替换为本机实际配置；不要直接执行示例。`PITCH_LAN_CIDRS` 应填写实际连接后端的客户端或代理来源网段，不信任 `X-Forwarded-For`。真实 IP、映射端口和部署脚本只保存在被 Git 忽略的 `.local/` 或 `.env` 中，不写入仓库文档、示例或提交说明。本项目不会修改防火墙或代理配置。WebSocket 配置参考 [noVNC 官方 Nginx 说明](https://github.com/novnc/noVNC/wiki/Proxying-with-nginx)。
+
+## 详细运行记录
+
+“运行记录”支持按错误/警告/信息和网站筛选，每页 50 条，保留最近 5000 条 SQLite 记录。每轮检查带编号，记录阶段、耗时、日期覆盖、价格观察、重试次数、问题分类和处理建议。人工接管不等于无场地，仍显示“暂无信息”。
+
+服务端同时写入 `.local/logs/runtime-YYYY-MM-DD.jsonl`（或 `PITCH_DATA_DIR/logs`），按伦敦日期保留 14 天。启动检查失败也写入该日志，方便服务尚未启动时排查。桌面子进程故障记录在 `logs/desktop-session.log`；超过 2 MiB 后下次启动轮换为 `.1`。日志不记录请求正文、密码、Cookie、令牌或网页正文。日志文件写入失败时 SQLite 仍保留记录，页面提示文件写入问题。
+
+```sh
+tail -n 100 .local/logs/runtime-*.jsonl
+tail -n 100 .local/logs/desktop-session.log
+```

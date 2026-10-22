@@ -47,6 +47,7 @@
     <section id="view-accounts" class="view" role="tabpanel" aria-labelledby="tab-accounts" hidden>
       <div class="page-heading"><div><h1>账号与接管</h1><p>三组账号独立保存，PlayFootball 两个场地共用一组。</p></div><button id="pause-all">全部暂停</button></div>
       <p class="section-description">账号明文显示，密码以隐藏提示显示保存状态。需要验证码或补充资料时，使用“手动接管”在官网完成；1分钟无操作后会自动检测并恢复监测。主动点击“暂停”会保持暂停。</p>
+      <section class="remote-desktop settings-panel"><h2>服务器浏览器</h2><p id="desktop-status">正在读取浏览器运行环境…</p><div class="credential-actions"><a id="desktop-open" class="button-link" target="_blank" rel="noopener noreferrer" hidden>打开远程浏览器</a><button id="desktop-check" type="button">检查远程桌面连接</button></div><p id="desktop-help" class="form-help"></p><p id="desktop-result" role="status" hidden></p></section>
       <div id="providers" class="providers"></div>
     </section>
     <section id="view-settings" class="view" role="tabpanel" aria-labelledby="tab-settings" hidden>
@@ -76,7 +77,10 @@
       <ul id="notification-list" class="notification-list"></ul>
     </section>
     <section id="view-activity" class="view" role="tabpanel" aria-labelledby="tab-activity" hidden>
-      <div class="page-heading"><div><h1>运行记录</h1><p>最近 20 条监测与操作记录。</p></div></div>
+      <div class="page-heading"><div><h1>运行记录</h1><p>检查结果、问题原因与处理建议。时间均为伦敦时间。</p></div></div>
+      <div class="activity-toolbar"><label>记录级别<select id="event-level"><option value="">全部级别</option><option value="ERROR">错误</option><option value="WARN">警告</option><option value="INFO">信息</option></select></label><label>网站 / 服务<select id="event-provider"><option value="">全部网站与服务</option><option value="ggcb">GGCB</option><option value="council">Tower Hamlets</option><option value="playfootball">PlayFootball</option><option value="feishu">飞书通知</option><option value="system">控制台</option></select></label><p id="event-summary" role="status">正在读取记录…</p></div>
+      <p id="event-error" class="notification-reason" role="status" hidden></p>
+      <div class="notification-pagination"><span id="event-page-label">最新记录</span><div><button id="event-latest" hidden>返回最新记录</button><button id="event-older" disabled>更早的记录</button></div></div>
       <ul id="events" class="events"><li>正在读取记录…</li></ul>
     </section>
     <footer><span id="connection" role="status">连接中…</span><span>电脑睡眠或服务退出时，监测停止。</span></footer>

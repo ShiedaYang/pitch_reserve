@@ -1,6 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname,join } from 'node:path';
+import {ActivityLog} from './activity-log.ts';
+import type {EventContext,EventQuery} from './activity-log.ts';
 import { initialPolicy, normalizeScanResult, resolvePolicy, resources } from './domain.ts';
 import type { Policy, Resource, ScanResult } from './domain.ts';
 import {parseCouncilDefaults} from './council-defaults.ts';
@@ -11,12 +13,14 @@ export class Store {
   db: DatabaseSync;
   notifications: NotificationQueue;
   incidents:IncidentLog;
+  activity:ActivityLog;
   constructor(path: string) {
     mkdirSync(dirname(path), { recursive: true }); this.db = new DatabaseSync(path);
     this.db.exec(`PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS scans (id INTEGER PRIMARY KEY, resource TEXT NOT NULL, at TEXT NOT NULL, result TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, at TEXT NOT NULL, message TEXT NOT NULL);`);
+    this.activity=new ActivityLog(this.db,path===':memory:'?undefined:join(dirname(path),'logs'));
     this.notifications=new NotificationQueue(this.db);
     this.incidents=new IncidentLog(this.db);
     // Seed the existing latest inventory once as well: upgrading must not omit already observed availability.
@@ -51,10 +55,8 @@ export class Store {
     const row = this.db.prepare('SELECT at,result FROM scans WHERE resource=? ORDER BY id DESC LIMIT 1').get(resourceId) as { at: string; result: string } | undefined;
     return row ? { at: row.at, result: normalizeScanResult(JSON.parse(row.result)) } : null;
   }
-  event(message: string) {
-    this.db.prepare('INSERT INTO events (at,message) VALUES (?,?)').run(new Date().toISOString(), message);
-    this.db.exec('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 100)');
-  }
-  events() { return this.db.prepare('SELECT at,message FROM events ORDER BY id DESC LIMIT 20').all(); }
+  event(message: string,context:EventContext={}) {return this.activity.record(message,context);}
+  events() { return this.activity.list().items; }
+  eventPage(query:EventQuery={}){return this.activity.list(query);}
   close() { this.db.close(); }
 }

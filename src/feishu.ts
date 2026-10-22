@@ -104,8 +104,8 @@ export class FeishuIntegration {
       }catch(error){this.#error=error instanceof FeishuError||error instanceof UncertainDelivery?error.message:'飞书发送未确认';throw error;}
     }};
     const job=dispatchNotifications(this.store.notifications,this.store.policy(),sender,{limit:3,now:this.clock,leaseMilliseconds:600000,notificationId})
-      .then(result=>{this.#lastDispatchAt=this.clock().toISOString();if(result.failed)this.store.incidents.report('feishu','DELIVERY_ERROR','飞书场次消息发送失败，请检查应用权限、收件人及送达记录。',this.clock());else if(result.sent)this.store.incidents.resolve('feishu',this.clock());if(result.sent&&!notificationId)this.store.event(`飞书已确认发送 ${result.sent} 条场次通知`);return result;})
-      .catch(()=>{this.#error='飞书通知任务暂不可用，队列记录仍保留';}).finally(()=>{this.#job=undefined;});
+      .then(result=>{this.#lastDispatchAt=this.clock().toISOString();if(result.failed)this.store.incidents.report('feishu','DELIVERY_ERROR','飞书场次消息发送失败，请检查应用权限、收件人及送达记录。',this.clock());else if(result.sent)this.store.incidents.resolve('feishu',this.clock());if(result.sent||result.failed)this.store.event(result.failed?'飞书场次通知未全部送达':'飞书场次通知发送完成',{level:result.failed?'ERROR':'INFO',provider:'feishu',stage:'DELIVERY',code:result.failed?'DELIVERY_FAILED':'DELIVERED',details:{sent:result.sent,failed:result.failed,...(result.failed?{reason:this.#error||'消息未确认送达',remedy:'在通知列表查看送达详情，核对应用权限与收件人；送达不确定时先人工核实，避免重复发送'}:{})}});return result;})
+      .catch(()=>{this.#error='飞书通知任务暂不可用，队列记录仍保留';this.store.event(this.#error,{level:'ERROR',provider:'feishu',stage:'DELIVERY',code:'DELIVERY_TASK_FAILED',details:{remedy:'检查通知列表及管理员通知配置；恢复后队列继续处理'}});}).finally(()=>{this.#job=undefined;});
     this.#job=job;return await job;
   }
   async reconcile(input:unknown){

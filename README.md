@@ -11,6 +11,8 @@ npm start
 
 打开 <http://127.0.0.1:4318>。Windows 也可运行 `./start.ps1`，Linux 使用 `sh start.sh`；两端调用同一启动逻辑。默认只绑定127.0.0.1；Windows 用 `./start.ps1 -Lan`、Linux 用 `sh start.sh --lan` 或两端共用 `npm start -- --lan` 可显式开启局域网访问，启动时会显示访问地址，且只接受本机及允许的私有网段。前台运行时按Ctrl+C正常保存退出；后台运行时可用 Windows 的 `./stop.ps1` 或 Linux 的 `sh stop.sh` 正常关闭（支持自定义端口）。退出运行进程会停止监测；电脑睡眠期间无法检查。
 
+启动会检查实际浏览器运行环境；缺少浏览器或依赖时先退出并给出修复命令，不进入循环重试。Linux 出现 `Executable doesn't exist` 时，以运行服务的同一用户在项目目录执行 `npx playwright install --with-deps chromium` 后重启；浏览器版本和缓存路径必须与当前项目一致，详见部署说明。
+
 ## 登录与恢复
 
 1. 展开对应网站的“账号密码自动登录”，输入账号和密码，点击“保存并自动登录”。GGCB、Tower Hamlets独立；PlayFootball两场地共用一组。也可以点击“手动接管”直接在官网登录。
@@ -93,3 +95,8 @@ node scripts/verify-console.ts
 代码分为持久化浏览器会话、三个网站适配器、监测调度、SQLite和静态网页。API只开放固定供应商的登录/打开/检测/恢复/暂停/扫描、只读表单结构检查及正常关闭操作，以Host/Origin和启动令牌保护修改请求。结构检查不读取密码或输入值，不保存完整页面。没有通用浏览器操作或任意URL接口。网站适配器按文件版本加载，调整日历解析后下次扫描即可使用，无需关闭已登录的浏览器。
 
 前期证据和剩余验收项：[网站验证](docs/website-validation.md)、[技术设计](docs/technical-framework.md)。这些文件记录设计/研究阶段，实际实现状态以本README及运行结果为准。
+## Ubuntu 远程浏览器与故障记录
+
+无桌面服务器需要手动登录或验证时，使用 `sh start-desktop.sh` 启动虚拟桌面和有界面浏览器，再从“账号与接管”打开远程浏览器。首次需要安装桌面组件并设置 VNC 密码，详见 [Linux 部署说明](docs/linux-deployment.md)。原 `sh start.sh` 继续支持无界面监测。
+
+运行记录可按级别与网站筛选、翻页，保存最近 5000 条；服务端 `PITCH_DATA_DIR/logs`（默认 `.local/logs`）另外保留 14 天逐日运行日志，包含启动故障、监测阶段、覆盖与价格计数、错误原因和恢复建议。Windows/Linux 使用同一记录机制。
