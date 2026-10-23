@@ -26,6 +26,10 @@ test('shared LAN launcher advertises addresses, keeps API guards, and stops with
   }
   const rejectedHost=await new Promise<number|undefined>((resolve,reject)=>{const req=request(base+'/api/state',{headers:{Host:`evil.example:${port}`}},res=>{res.resume();resolve(res.statusCode);});req.once('error',reject);req.end();});assert.equal(rejectedHost,403);
   assert.equal((await fetch(base+'/api/providers/playfootball/verify-in-browser',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,403);
+  assert.equal((await fetch(base+'/api/activity',{method:'POST',headers:{'Content-Type':'application/json','X-Console-Token':'é'.repeat(64)},body:'{}'})).status,403);
+  assert.equal((await fetch(base+'/api/state')).status,200,'malformed tokens must not crash the server');
+  const malformedUpgrade=await new Promise<number|undefined>((resolve,reject)=>{const req=request({host:'127.0.0.1',port,path:'http://[',headers:{Connection:'Upgrade',Upgrade:'websocket',Origin:base}},res=>{res.resume();resolve(res.statusCode);});req.once('error',reject);req.end();});assert.equal(malformedUpgrade,403);
+  assert.equal((await fetch(base+'/api/state')).status,200,'malformed WebSocket URLs must not crash the server');
   const stop=spawn(process.execPath,['--disable-warning=ExperimentalWarning','scripts/stop-server.ts'],{cwd,env,stdio:'ignore',windowsHide:true});assert.equal(await new Promise(resolve=>stop.once('exit',resolve)),0);await exited;assert.equal(child.exitCode,0);
  }finally{if(child.exitCode===null){child.kill('SIGTERM');await exited;}await rm(root,{recursive:true,force:true});}
 });

@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer,request} from 'node:http';
+import {createHash} from 'node:crypto';
 import type {Server} from 'node:http';
 import {DesktopProxy,desktopUpstream} from '../src/desktop-proxy.ts';
 import {desktopSettings} from '../src/desktop-session.ts';
@@ -21,4 +22,11 @@ test('WebSocket relay preserves handshake and bidirectional bytes without leakin
 });
 test('an unconfigured desktop reports unavailable without exposing any external resource',async()=>{
  const proxy=new DesktopProxy(null);assert.deepEqual(await proxy.check(),{configured:false,reachable:false});const server=createServer((req,res)=>proxy.http(req,res,new URL(req.url!,'http://localhost')));const base=await listen(server);try{assert.equal((await fetch(base+'/desktop/vnc.html')).status,503);}finally{await close(server);}
+});
+
+test('a standard WebSocket client receives the binary VNC greeting through the console relay',{timeout:10000},async()=>{
+ const remotes=new Set<import('node:stream').Duplex>();const upstream=createServer();
+ upstream.on('upgrade',(req,socket)=>{remotes.add(socket);socket.once('close',()=>remotes.delete(socket));socket.on('end',()=>socket.destroy());socket.on('error',()=>{});const accept=createHash('sha1').update(req.headers['sec-websocket-key']+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');socket.write('HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: '+accept+'\r\nSec-WebSocket-Protocol: binary\r\n\r\n');socket.write(Buffer.concat([Buffer.from([0x82,12]),Buffer.from('RFB 003.008\n')]));});
+ const base=await listen(upstream),proxy=new DesktopProxy(new URL(base)),server=createServer();server.on('upgrade',(req,socket,head)=>proxy.upgrade(req,socket,head));const local=await listen(server);const ws=new WebSocket(local.replace('http:','ws:')+'/desktop/websockify','binary');ws.binaryType='arraybuffer';
+ try{await new Promise<void>((resolve,reject)=>{ws.onerror=()=>reject(new Error('Standard WebSocket handshake failed'));ws.onmessage=event=>{try{assert.equal(Buffer.from(event.data).toString(),'RFB 003.008\n');assert.equal(ws.protocol,'binary');resolve();}catch(error){reject(error);}};});}finally{ws.close();for(const socket of remotes)socket.destroy();await close(server);await close(upstream);}
 });

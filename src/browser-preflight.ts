@@ -1,4 +1,5 @@
 import {browserOptions} from './runtime-config.ts';
+import {diagnoseError} from './activity-log.ts';
 
 export async function preflightBrowser(prepare:()=>Promise<unknown>,platform:NodeJS.Platform=process.platform,env:NodeJS.ProcessEnv=process.env){
   if(env.PITCH_START_PAUSED==='1')return;
@@ -12,6 +13,8 @@ export async function preflightBrowser(prepare:()=>Promise<unknown>,platform:Nod
       throw new Error(`浏览器启动检查失败：当前项目所需的浏览器尚未安装或版本已变化。\n请以运行服务的同一用户，在项目目录执行：\n  ${install}\n浏览器缓存按用户区分，不要用 sudo 执行整条浏览器下载命令；更换 Playwright 版本或 PLAYWRIGHT_BROWSERS_PATH 后需要重新安装。`);
     }
     if(/host system is missing dependencies|error while loading shared libraries|cannot open shared object file/i.test(detail))throw new Error(`浏览器启动检查失败：缺少系统依赖。\n请在项目目录执行：\n  npx playwright install-deps ${browser}\n然后重新启动服务。`);
+    const issue=diagnoseError(error);
+    if(['SANDBOX_UNAVAILABLE','DISPLAY_UNAVAILABLE','BROWSER_PERMISSION','PROFILE_IN_USE'].includes(issue.code))throw new Error(`浏览器启动检查失败 [${issue.code}]：${issue.reason}。\n${issue.remedy}。`);
     throw new Error('浏览器启动检查失败：请检查图形桌面/DISPLAY、运行用户权限、浏览器路径，以及是否已有实例占用专用 profile。');
   }
 }

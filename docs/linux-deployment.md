@@ -176,6 +176,8 @@ sh start-desktop.sh
 
 `Ctrl+C` 或 `sh stop.sh` 会先停止控制台并保存会话，再关闭这次启动的桌面子进程。普通验证窗口仍开着时请先正常关闭。不要重复启动相同 display/端口；脚本会检查冲突，不关闭其他进程。可用 `PITCH_DESKTOP_DISPLAY`、`PITCH_VNC_PORT`、`PITCH_DESKTOP_PORT` 调整；noVNC 安装位置可用 `PITCH_NOVNC_DIR` 指定。当前为前台启动，关闭 SSH 会话前应使用 tmux，或按下文配置服务管理器。
 
+SSH 运行时可先执行 `tmux new-session -A -s pitch`，再在该会话中启动本机部署脚本或 `sh start-desktop.sh`。保持服务运行并离开画面的方法是按 `Ctrl+B`，松开后按 `D`；不是 `Ctrl+C`。返回画面用 `tmux attach -t pitch`。诊断连接时，使用另一个 SSH 窗口，或先脱离 tmux 后执行诊断，不要停止服务来腾出终端。若服务已停止，直连的 `ECONNREFUSED` 与代理的 `502` 不能用于判断 WebSocket 转发是否正确。
+
 如果经由反向代理访问，代理必须转发 WebSocket，保持外部 Host。Nginx 示例（放入对应 server 的 location；上游与当前部署一致）：
 
 ```nginx
@@ -191,6 +193,77 @@ location / {
 ```
 
 以上占位符必须替换为本机实际配置；不要直接执行示例。`PITCH_LAN_CIDRS` 应填写实际连接后端的客户端或代理来源网段，不信任 `X-Forwarded-For`。真实 IP、映射端口和部署脚本只保存在被 Git 忽略的 `.local/` 或 `.env` 中，不写入仓库文档、示例或提交说明。本项目不会修改防火墙或代理配置。WebSocket 配置参考 [noVNC 官方 Nginx 说明](https://github.com/novnc/noVNC/wiki/Proxying-with-nginx)。
+
+如果后端直连 WebSocket 已返回 `101` 并能读取 `RFB` 欢迎消息，而代理入口返回 `404`，应检查 Nginx 的路径匹配及重写。在当前控制台对应的 `server` 块中，可为这条路径添加精确匹配规则；已有相同规则时应替换，不能重复定义：
+
+```nginx
+location = /desktop/websockify {
+    proxy_pass http://<控制台后端主机>:<后端端口>;
+    proxy_http_version 1.1;
+    proxy_pass_request_headers on;
+    proxy_set_header Host $http_host;
+    proxy_set_header Origin $http_origin;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_buffering off;
+}
+```
+
+上游使用现有控制台的同一个地址，`proxy_pass` 不带 URI、末尾不加 `/`，使 `/desktop/websockify` 原样到达控制台。真实地址只放服务器 Nginx 配置中，不复制到项目。修改后在 Nginx 所在机器执行 `sudo nginx -t && sudo systemctl reload nginx`，并保持控制台运行后再测试。
+
+当前“检查远程桌面连接”检查的是 noVNC 网页可达性，成功仍需进一步验证 WebSocket 和 VNC 通道。网页上的 `package.json` 404 不一定会阻止连接；若后续仍发起 WebSocket，应该以 WebSocket 握手与 VNC 消息的结果定位问题。`1006` 是异常断开的通用结果，不能单凭它断言是代理、认证或浏览器问题。
+
+## Ubuntu 的 Chromium 沙箱启动失败
+
+若临时浏览器也报告 `Chromium sandboxing failed` 或 `No usable sandbox`，先确认是普通服务用户，并读取系统开关：
+
+```sh
+id -u
+sysctl kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone user.max_user_namespaces
+```
+
+Ubuntu 24.04 中，如果 AppArmor 用户命名空间限制为 1，而用户命名空间本身已开启且额度非零，可以为实际使用的 Chromium 二进制设置专用策略。以下仅适用于使用 Playwright 自带 Chromium 的 `start-desktop.sh`；自定义浏览器须按真实二进制路径另行配置。
+
+在项目目录，以运行服务的普通用户执行。二进制路径只在本机变量和系统策略中使用，不复制进仓库或提交说明：
+
+```sh
+PITCH_CHROME_BIN="$(node --input-type=module -e "import {chromium} from 'playwright'; import {realpathSync} from 'node:fs'; process.stdout.write(realpathSync(chromium.executablePath()));")"
+test -x "$PITCH_CHROME_BIN"
+
+sudo tee /etc/apparmor.d/pitch-reserve-chromium >/dev/null <<EOF
+abi <abi/4.0>,
+include <tunables/global>
+
+profile pitch-reserve-chromium "$PITCH_CHROME_BIN" flags=(unconfined) {
+  userns,
+}
+EOF
+
+sudo apparmor_parser -r /etc/apparmor.d/pitch-reserve-chromium
+```
+
+验证浏览器仍启用沙箱，并且不访问官网、不使用已有 profile：
+
+```sh
+xvfb-run -a node --input-type=module <<'NODE'
+import {chromium} from 'playwright';
+let browser;
+try {
+  browser = await chromium.launch({headless:false, chromiumSandbox:true});
+  console.log('SANDBOX_BROWSER_OK');
+} catch {
+  console.log('SANDBOX_BROWSER_FAILED');
+} finally {
+  await browser?.close();
+}
+NODE
+```
+
+成功后使用原本机部署脚本启动。失败时继续核对 AppArmor 审计信息与系统策略，不自动关闭 Chromium 沙箱或全局内核限制。该策略仅覆盖当前有界面 Chromium 的精确路径；浏览器更新、切换服务用户、修改浏览器缓存位置或改用独立 headless shell 后，需要按实际二进制重新配置。若管理员需撤销此次配置，先停止服务，再执行 `sudo apparmor_parser -R /etc/apparmor.d/pitch-reserve-chromium` 并移除该专用策略文件。
+
+参考 [Chromium 官方 AppArmor 用户命名空间说明](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md)。启动检查会将此故障标为 `SANDBOX_UNAVAILABLE`；显示、权限和 profile 占用分别标为 `DISPLAY_UNAVAILABLE`、`BROWSER_PERMISSION`、`PROFILE_IN_USE`，不回显原始启动参数或凭据。
 
 ## 详细运行记录
 

@@ -1,7 +1,7 @@
 import type {Frame,Page} from 'playwright';
 import type {CouncilDefaults} from './council-defaults.ts';
 import type {ProviderSession} from './browser.ts';
-import {statSync} from 'node:fs';
+import {applyCouncilAddress} from './council-address.ts';
 import {Interrupted} from './browser.ts';
 
 const normalized=(value:string)=>value.replace(/[–—]/g,'-').replace(/\s+/g,' ').trim();
@@ -70,7 +70,6 @@ export async function prepareCouncil(page:Page,defaults:CouncilDefaults,session:
     const teamFields=await form.locator('input[type=text],input:not([type])').evaluateAll(inputs=>inputs.map((input,index)=>({index,visible:input.getClientRects().length>0 && getComputedStyle(input).visibility!=='hidden',label:[input.id,input.getAttribute('name')||'',...Array.from((input as HTMLInputElement).labels||[]).map(label=>label.textContent||'')].join(' ')})).filter(field=>field.visible && /team.?name|name.?of.?(?:the.)?(?:team|club)|club.?name/i.test(field.label)));
     if(teamFields.length===1){assertControl();await form.locator('input[type=text],input:not([type])').nth(teamFields[0].index).fill(defaults.teamName);teamFilled=true;}
     if(current==='ADDRESS'){
-      const url=new URL('./council-address.ts',import.meta.url);const {applyCouncilAddress}=await import(`${url.href}?v=${statSync(url).mtimeMs}`) as typeof import('./council-address.ts');
       const address=await applyCouncilAddress(form,session.root,assertControl);
       if(address.kind!=='SELECTED')return {stage:current,message:address.message,addressStatus:address.kind,addressCount:address.count};
       addressApplied=true;

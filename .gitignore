@@ -3,6 +3,7 @@ node_modules/
 /.local/
 /.cache/
 /npm-cache/
+/.codegraph/
 
 # Local environment and secrets (sanitized templates may be committed)
 .env

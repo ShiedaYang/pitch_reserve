@@ -2,12 +2,10 @@ import type { Page } from 'playwright';
 import {londonDate,targetDates} from '../domain.ts';
 import type {Coverage,Observation,Policy,Resource,ScanResult} from '../domain.ts';
 import type {ProviderSession} from '../browser.ts';
-import {statSync} from 'node:fs';
+import {ggcbReleaseDate,isGgcbDayResponse,navigateGgcbMonth,quoteGgcb} from './ggcb-calendar.ts';
 
 export interface GgcbOptions {today?:string;calendarTimeout?:number;responseTimeout?:number;}
 export async function scanGgcb(page:Page,resource:Resource,policy:Policy,session:ProviderSession,options:GgcbOptions={}):Promise<ScanResult> {
-  const helpers=new URL('./ggcb-calendar.ts',import.meta.url);
-  const {ggcbReleaseDate,isGgcbDayResponse,navigateGgcbMonth,quoteGgcb}=await import(`${helpers.href}?v=${statSync(helpers).mtimeMs}`) as typeof import('./ggcb-calendar.ts');
   const today=options.today||londonDate();const wanted=targetDates(policy,today,options.today?new Date(`${today}T12:00:00Z`):new Date());const coverage=new Map<string,Coverage>();const observations:Observation[]=[];
   const form=page.locator('#wc-bookings-booking-form');await form.waitFor();
   const ruleVerified=/dates for the following month are only released 7 days prior/i.test(await page.locator('body').innerText());

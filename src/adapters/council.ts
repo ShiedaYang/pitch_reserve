@@ -2,25 +2,22 @@ import type { Page } from 'playwright';
 import type { Policy, ScanResult } from '../domain.ts';
 import { targetDates } from '../domain.ts';
 import type { ProviderSession } from '../browser.ts';
-import { statSync } from 'node:fs';
-import {loadAuth} from '../auth-runtime.ts';
+import {authSignals} from '../auth.ts';
+import {councilUserPage} from '../council-page.ts';
+import {prepareCouncil} from '../council-setup.ts';
+import {scanCouncilCalendar} from './council-calendar.ts';
 import type {CouncilDefaults} from '../council-defaults.ts';
 
 export async function scanCouncil(page: Page, policy: Policy, session: ProviderSession,defaults?:CouncilDefaults): Promise<ScanResult> {
-  const pageModule = new URL('../council-page.ts',import.meta.url);
-  const version = String(statSync(pageModule).mtimeMs);
-  const { councilUserPage } = await import(`${pageModule.href}?v=${version}`) as typeof import('../council-page.ts');
   page = await councilUserPage(session) || page;
   await page.locator('body').waitFor(); session.assertAutomatic();
-  const auth=await (await loadAuth()).authSignals(page,'council');
+  const auth=await authSignals(page,'council');
   const gate = await page.getByRole('heading', { name: 'Before you begin', exact: true }).count();
   const login = auth.password || (!!gate && !auth.authenticated);
   if (login) session.status = 'LOGIN_REQUIRED';
   else if(auth.authenticated)session.status='AUTHENTICATED';
   let form = page.frames().find(frame => frame !== page.mainFrame());
   if(!login&&defaults&&form&&!await form.getByRole('heading',{name:'Booking a pitch',exact:true}).count()){
-    const module=new URL('../council-setup.ts',import.meta.url);
-    const {prepareCouncil}=await import(`${module.href}?v=${statSync(module).mtimeMs}`) as typeof import('../council-setup.ts');
     const prepared=await prepareCouncil(page,defaults,session,'AUTOMATION');session.assertAutomatic();
     if(prepared.stage!=='CALENDAR'){
       if(prepared.stage!=='WAITING')session.mode='MANUAL_CONTROL';
@@ -30,8 +27,6 @@ export async function scanCouncil(page: Page, policy: Policy, session: ProviderS
     await session.saveSession();form=page.frames().find(frame=>frame!==page.mainFrame());
   }
   if (form && await form.getByRole('heading',{name:'Booking a pitch',exact:true}).count()) {
-    const calendarModule=new URL('./council-calendar.ts',import.meta.url);
-    const {scanCouncilCalendar}=await import(`${calendarModule.href}?v=${statSync(calendarModule).mtimeMs}`) as typeof import('./council-calendar.ts');
     return scanCouncilCalendar(form,policy,session);
   }
   if (form && await form.locator('#addressSelector:visible, #manual_addressLine1:visible').count()) {

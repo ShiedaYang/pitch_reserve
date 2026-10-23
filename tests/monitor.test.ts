@@ -38,6 +38,17 @@ test('handoff cancels automated steps and waits for the in-flight work to drain'
   await assert.rejects(task, Interrupted); assert.equal(navigated, false); assert.equal(session.job, undefined);
   session.mode = 'AUTOMATION'; await session.exclusive(async () => {});
 });
+
+test('shutdown closes owned browsers to interrupt navigation before draining scan jobs',async()=>{
+  const root=mkdtempSync(join(tmpdir(),'pitch-close-'));const store=new Store(':memory:');const monitor=new Monitor(store,root);
+  const session=monitor.sessions.get('ggcb')!;let release!:()=>void;
+  const blocked=new Promise<void>(resolve=>{release=resolve;});
+  session.saveSession=async()=>{};
+  session.context={close:async()=>{release();}} as unknown as import('playwright').BrowserContext;
+  const job=session.exclusive(()=>blocked);const closing=monitor.close();let timer:NodeJS.Timeout|undefined;
+  try{assert.equal(await Promise.race([closing.then(()=>'CLOSED'),new Promise(resolve=>{timer=setTimeout(()=>resolve('STUCK'),300);})]),'CLOSED');await job;}
+  finally{clearTimeout(timer);release();await closing;store.close();rmSync(root,{recursive:true,force:true});}
+});
 test('read-only calendar scan never follows a bookable slot and maps actual DOM row boundaries', async () => {
   const browser = await chromium.launch({ channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined), headless:true, chromiumSandbox:true, timeout:30000 });
   try {

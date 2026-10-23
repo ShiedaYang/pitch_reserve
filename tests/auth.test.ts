@@ -34,7 +34,9 @@ test('Council login follows its account-home redirect to the fixed booking entry
     const page=await browser.newPage();let posts=0;const host='https://towerhamlets-self.achieveservice.com';
     await page.route('**/*',route=>{
       const request=route.request();const path=new URL(request.url()).pathname;
-      if(request.method()==='POST'){posts++;return route.fulfill({status:302,headers:{location:host+'/'},body:''});}
+      // Use a fresh browser navigation after the login response: redirect hops
+      // from a fulfilled 302 can bypass routing and reach the real website.
+      if(request.method()==='POST'){posts++;return route.fulfill({contentType:'text/html',body:'<script>location.replace("/")</script>'});}
       if(path==='/')return route.fulfill({contentType:'text/html',body:'<h1>Tower Hamlets forms</h1>'});
       if(path==='/service/Book_a_sports_pitch')return route.fulfill({contentType:'text/html',body:'<h1>Book a sports pitch</h1><select id="footbalPitch"><option>Stepney Green</option></select><input type="radio" name="TH_borough">'});
       return route.fulfill({contentType:'text/html',body:'<form method="post"><input type="email" name="username"><input type="password"><button>Log in</button></form>'});

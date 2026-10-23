@@ -24,8 +24,10 @@ export function diagnoseError(error:unknown){
  const cases:[RegExp,string,string,string][]=[
   [/executable.*(?:doesn't|does not) exist|浏览器.*尚未安装|所需的浏览器|browser distribution.+not found/i,'BROWSER_NOT_INSTALLED','当前用户缺少所需版本的浏览器','以服务用户在项目目录执行 npx playwright install --with-deps chromium'],
   [/missing dependencies|loading shared libraries|缺少系统依赖/i,'BROWSER_DEPENDENCIES','缺少浏览器系统依赖','执行 npx playwright install-deps chromium 后重新启动'],
-  [/xserver|\$DISPLAY|missing.*display|图形桌面\/DISPLAY/i,'DISPLAY_UNAVAILABLE','有界面浏览器无法连接图形桌面','使用 sh start-desktop.sh 启动远程桌面及有界面浏览器'],
-  [/SingletonLock|user data directory.*in use|profile.*(?:in use|占用)/i,'PROFILE_IN_USE','专用浏览器目录正在被其他进程占用','先正常关闭旧实例或普通验证窗口，再重试；不要删除 profile'],
+  [/SANDBOX_UNAVAILABLE|No usable sandbox|Chromium sandboxing failed|Failed to move to new namespace|Running as root without --no-sandbox/i,'SANDBOX_UNAVAILABLE','系统无法创建 Chromium 沙箱','以普通用户运行；Ubuntu 请检查用户命名空间和 AppArmor 限制，按部署文档为实际浏览器路径配置专用策略后重试'],
+  [/DISPLAY_UNAVAILABLE|xserver|Missing X server|\$DISPLAY|missing.*display|图形桌面\/DISPLAY|X11 connection rejected/i,'DISPLAY_UNAVAILABLE','有界面浏览器无法连接图形桌面','使用 sh start-desktop.sh 启动远程桌面，确认浏览器与桌面使用同一个 DISPLAY 和 XAUTHORITY'],
+  [/BROWSER_PERMISSION|\bEACCES\b|(?:Permission denied|Operation not permitted).*(?:chrome|chromium|profile|user-data-dir)/i,'BROWSER_PERMISSION','服务用户无法访问浏览器或专用数据目录','检查浏览器执行权限和 PITCH_DATA_DIR 的属主；不要用 sudo 启动服务，也不要删除已有会话'],
+  [/PROFILE_IN_USE|SingletonLock|ProcessSingleton|user data directory.*in use|profile.*(?:in use|占用)/i,'PROFILE_IN_USE','专用浏览器目录正在被其他进程占用','先正常关闭旧实例或普通验证窗口，再重试；不要删除 profile'],
   [/ERR_NAME_NOT_RESOLVED|ENOTFOUND|EAI_AGAIN/i,'NETWORK_DNS','官网域名解析失败','检查服务器 DNS 与网络连通性，等待下一次重试'],
   [/ERR_CONNECTION|ECONNREFUSED|ECONNRESET|ETIMEDOUT/i,'NETWORK_CONNECTION','官网连接失败或被中断','检查服务器网络、代理和官网状态'],
   [/Timeout|timeout|超时/i,'TIMEOUT','官网请求或日历加载超时','程序会先重开一次；仍失败则手动接管检查页面'],

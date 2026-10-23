@@ -96,7 +96,7 @@ function renderCalendar(){
  setHTML('next-slots',availableSlots.length?`<span>近期可订观察</span>${availableSlots.slice(0,2).map(({r,o})=>`<a class="next-slot" data-slot data-resource="${r.id}" data-date="${o.date}" data-provider="${r.provider}" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${o.date.slice(5)} ${esc(r.name)}<strong>${esc(o.price||'价格待核实')}</strong>${isStale(r)?' <small>历史观察，需复核</small>':''}</a>`).join('')}${availableSlots.length>2?'<button class="text-button" data-filter-available>查看全部可订日期</button>':''}`:$('available-only').checked?'暂未发现可订观察。取消筛选可查看其他日期的监测状态。':'暂未发现可订观察。下表保留全部目标日期，暂无信息不代表售罄。');
 }
 function render(){if(!state)return;
- renderProviders();renderResources();renderCalendar();renderNotifications();renderFeishu();
+ renderProviders();renderResources();renderCalendar();renderFeishu();
  const canScan=state.providers.some(p=>p.mode==='AUTOMATION'&&!p.busy&&!pending.has(p.id));
  $('scan-all').disabled=scanning||!canScan;
  $('scan-all').textContent=scanning?'正在检查…':'立即检查';

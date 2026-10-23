@@ -23,7 +23,7 @@ await monitor.restoreCredentials();
 const feishu=new FeishuIntegration(store,new FeishuSettingsRepository(local));await feishu.restore();
 const desktop=new DesktopProxy(desktopUpstream(),()=>store.event('远程桌面连接失败',{level:'ERROR',stage:'REMOTE_DESKTOP',code:'DESKTOP_UNAVAILABLE',details:{reason:'无法连接本机 noVNC 服务',remedy:'检查桌面进程日志，使用 sh start-desktop.sh 启动服务'}}));
 function desktopState(){return {configured:!!desktop.upstream,url:manualBrowserUrl(),headless:!!browserOptions().headless,displayAvailable:!!process.env.DISPLAY};}
-function consoleState(){const state=monitor.state();return {...state,desktop:desktopState(),logging:{retained:5000,fileError:store.activity.fileError},feishu:feishu.state(),notifications:{...state.notifications,items:feishu.decorate(state.notifications.items),deliveryConfigured:feishu.state().configured}};}
+function consoleState(){const state=monitor.state(),integration=feishu.state();return {...state,desktop:desktopState(),logging:{retained:5000,fileError:store.activity.fileError},feishu:integration,notifications:{...state.notifications,items:feishu.decorate(state.notifications.items),deliveryConfigured:integration.configured}};}
 const network=networkAccess();const {port,origin}=network;
 const allowedHosts=network.hosts,allowedOrigins=network.origins;
 // Warm the scanner's actual persistent context once. Reuse it during monitoring;
@@ -32,7 +32,7 @@ store.event('正在检查运行环境',{stage:'STARTUP',code:'STARTUP_BEGIN',det
 try{await preflightBrowser(()=>monitor.sessions.get('ggcb')!.getContext());}
 catch(error){const issue=diagnoseError(error);store.event('启动检查失败',{level:'ERROR',stage:'STARTUP',code:issue.code,details:issue});await Promise.all([feishu.close(),monitor.close()]);store.close();throw error;}
 const token = randomBytes(32).toString('hex');
-function validToken(input: unknown) { return typeof input === 'string' && input.length === token.length && timingSafeEqual(Buffer.from(input), Buffer.from(token)); }
+function validToken(input: unknown) { return typeof input === 'string' && Buffer.byteLength(input) === token.length && timingSafeEqual(Buffer.from(input), Buffer.from(token)); }
 const staticFiles: Record<string, [string, string]> = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'] };
 const server = createServer(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -96,7 +96,7 @@ const server = createServer(async (req, res) => {
   }
 });
 server.on('upgrade',(req,socket,head)=>{
-  const path=new URL(req.url||'/',origin).pathname;
+  let path:string;try{path=new URL(req.url||'/',origin).pathname;}catch{socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');return;}
   if(!network.allows(req.socket.remoteAddress)||!allowedHosts.has(req.headers.host||'')||!req.headers.origin||!allowedOrigins.has(req.headers.origin)||req.headers['sec-fetch-site']==='cross-site'||path!=='/desktop/websockify'||req.headers.upgrade?.toLowerCase()!=='websocket'){
     socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');return;
   }

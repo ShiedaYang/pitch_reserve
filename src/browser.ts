@@ -5,8 +5,7 @@ import { join } from 'node:path';
 import { loginUrls,resources } from './domain.ts';
 import {NativeVerification,verificationBrowser} from './native-verification.ts';
 import { councilUserPage } from './council-page.ts';
-import {parseCredentials} from './auth.ts';
-import {loadAuth} from './auth-runtime.ts';
+import {parseCredentials,authSignals,submitLogin} from './auth.ts';
 import type {Credentials,LoginResult} from './auth.ts';
 import type {CredentialVault} from './credential-vault.ts';
 import type { Mode, ProviderId, SessionStatus, Resource } from './domain.ts';
@@ -98,7 +97,6 @@ export class ProviderSession {
     return this.exclusive(()=>this.signInStored('MANUAL_CONTROL',true));
   }
   async signInStored(expectedMode:Mode,reuseExisting=false):Promise<LoginResult> {
-    const {authSignals,submitLogin}=await loadAuth();
     const credentials=this.#credentials;if(!credentials)throw new Error('请输入账号和密码');
     const assertControl=()=>{if(this.mode!==expectedMode || this.#credentials!==credentials)throw new Interrupted('已暂停，等待人工接管');};
     assertControl();const context=await this.getContext();assertControl();
@@ -153,6 +151,7 @@ export class ProviderSession {
         acceptDownloads: false,
         args:['--disable-background-timer-throttling','--disable-renderer-backgrounding']
       }));
+      try{
       context.setDefaultTimeout(12000); context.setDefaultNavigationTimeout(35000);
       await this.trackManualActivity(context);
       const authFile = join(this.root, 'sessions', `${this.id}.json`);
@@ -167,6 +166,7 @@ export class ProviderSession {
       }
       context.on('close', () => { if(this.context!==context)return;this.context = undefined; this.pages.clear(); this.manualPage = undefined; this.loginPage=undefined; this.status = 'UNKNOWN'; this.needsHumanVerification=false;if(this.mode!=='PAUSED'&&!this.restarting){this.mode='AUTOMATION';this.nextScanAt=Date.now()+1000;} });
       this.context = context; return context;
+      }catch(error){await context.close().catch(()=>{});throw error;}
     })().finally(() => { this.opening = undefined; });
     return this.opening;
   }
@@ -218,7 +218,7 @@ export class ProviderSession {
       const context=await this.getContext();assertControl();
       const page=await context.newPage();assertControl();this.pages.set(resource.id,page);this.manualPage=page;
       try{await page.goto(resource.url,{waitUntil:'domcontentloaded'});}catch{assertControl();this.mode=previousMode==='PAUSED'?'PAUSED':'MANUAL_CONTROL';this.attention={kind:'TIMEOUT',message:'浏览器已重新打开，但官网加载未完成，请手动接管。',at:new Date().toISOString()};this.recordManualActivity();return;}
-      assertControl();await page.bringToFront();const signals=await (await loadAuth()).authSignals(page,this.id);assertControl();
+      assertControl();await page.bringToFront();const signals=await authSignals(page,this.id);assertControl();
       this.status=signals.password?'LOGIN_REQUIRED':signals.authenticated?'AUTHENTICATED':'UNKNOWN';this.needsHumanVerification=signals.challenge;
       this.mode=previousMode;
       if(signals.challenge){this.attention={kind:'HUMAN_VERIFICATION',message:'暂无信息：官网出现人机验证，请手动接管完成验证；验证期间停止自动刷新。',at:new Date().toISOString()};if(previousMode!=='PAUSED')this.mode='MANUAL_CONTROL';}
@@ -229,7 +229,6 @@ export class ProviderSession {
     finally{if(this.job===job)this.job=undefined;this.restarting=false;}
   }
   async challengePage(){
-    const {authSignals}=await loadAuth();
     for(const page of this.context?.pages()??[]){if(!page.isClosed()&&(await authSignals(page,this.id)).challenge)return page;}
   }
   async requireManual(kind:'TIMEOUT'|'HUMAN_VERIFICATION',message:string,page?:Page){
@@ -252,7 +251,6 @@ export class ProviderSession {
   async check(): Promise<SessionStatus> {
     if(this.nativeVerification.active)return this.status;
     return this.exclusive(async () => {
-      const {authSignals}=await loadAuth();
       const page = this.id==='council'?(await councilUserPage(this)??this.manualPage):(this.manualPage??[...this.pages.values()].find(page=>!page.isClosed()));
       if (!page || page.isClosed()) return this.status;
       // Read the user-owned page without navigating, refreshing, or collecting input values.
@@ -272,7 +270,6 @@ export class ProviderSession {
   }
   async inspect() {
     return this.exclusive(async () => {
-      const {authSignals}=await loadAuth();
       const page = await councilUserPage(this) || (this.manualPage && !this.manualPage.isClosed() ? this.manualPage : [...this.pages.values()].find(p=>!p.isClosed()));
       if (!page) throw new Error('请先打开官网页面');
       const frames = [];

@@ -3,7 +3,10 @@ import {diagnoseError} from './activity-log.ts';
 import { ProviderSession, Interrupted } from './browser.ts';
 import { londonDate, providerIds, resources, targetDates } from './domain.ts';
 import type { ProviderId, Resource, ScanResult } from './domain.ts';
-import { statSync } from 'node:fs';
+import {scanGgcb} from './adapters/ggcb.ts';
+import {scanCouncil} from './adapters/council.ts';
+import {scanPlayFootball} from './adapters/playfootball.ts';
+import {prepareCouncil} from './council-setup.ts';
 import type { Store } from './store.ts';
 import {councilUserPage} from './council-page.ts';
 import {CredentialVault} from './credential-vault.ts';
@@ -74,11 +77,10 @@ export class Monitor {
       attemptNo=attempt+1;stage='OPEN_PAGE';const page = await session.page(resource);
       const challenge=await session.challengePage();session.assertAutomatic();
       if(challenge){const message='暂无信息：官网出现人机验证，请手动接管完成验证；验证期间停止自动刷新。';await session.requireManual('HUMAN_VERIFICATION',message,challenge);this.store.incidents.report(session.id,'HUMAN_VERIFICATION',message);result={status:'PARTIAL',observations:[],coverage:targetDates(policy).map(date=>({date,status:'UNKNOWN',note:'官网需要人机验证'})),summary:message};break;}
-      stage='CALENDAR';const moduleUrl = new URL(`./adapters/${resource.provider}.ts`, import.meta.url);
-      const adapter = await import(`${moduleUrl.href}?v=${statSync(moduleUrl).mtimeMs}`);
-      if (resource.provider === 'playfootball') result = await adapter.scanPlayFootball(page, resource, policy, session);
-      else if (resource.provider === 'ggcb') result = await adapter.scanGgcb(page, resource, policy, session);
-      else result = await adapter.scanCouncil(page, policy, session,this.store.councilDefaults()??undefined);
+      stage='CALENDAR';
+      if (resource.provider === 'playfootball') result = await scanPlayFootball(page, resource, policy, session);
+      else if (resource.provider === 'ggcb') result = await scanGgcb(page, resource, policy, session);
+      else result = await scanCouncil(page, policy, session,this.store.councilDefaults()??undefined);
       if(!result)throw new Error('官网读取未返回结果');
       if(result.status==='ERROR')this.store.incidents.report(session.id,'SCAN_ERROR','官网读取返回异常，请检查运行记录和页面结构。');
       if(/超时|timeout/i.test(result.summary)&&!result.coverage.some(row=>row.status==='READ')){const timeout=new Error('官网请求超时');timeout.name='TimeoutError';throw timeout;}
@@ -132,7 +134,6 @@ export class Monitor {
     const session=this.sessions.get('council')!;if(session.restarting)throw new Error('该网站浏览器正在重启，请稍后再试');session.mode='MANUAL_CONTROL';await session.job?.catch(()=>{});
     session.recordManualActivity();const result=await session.exclusive(async()=>{
       const page=await councilUserPage(session);if(!page)throw new Error('请先登录Council并打开场地表单');
-      const url=new URL('./council-setup.ts',import.meta.url);const {prepareCouncil}=await import(`${url.href}?v=${statSync(url).mtimeMs}`) as typeof import('./council-setup.ts');
       const result=await prepareCouncil(page,defaults,session);await session.saveSession();this.store.event(`Council：${result.message}`,{provider:'council',stage:'CALENDAR',code:result.stage});return result;
     });
     if(result.stage==='CALENDAR'&&session.mode==='MANUAL_CONTROL'&&!this.stopping){session.mode='AUTOMATION';session.nextScanAt=0;void this.scan('council').catch(()=>{});}
@@ -169,5 +170,5 @@ export class Monitor {
     } else if (action === 'scan') { void this.scan(id).catch(() => {}); }
     else throw new Error('不支持的操作');
   }
-  async close() { this.stopping = true; clearInterval(this.timer); for (const s of this.sessions.values()) s.mode = 'PAUSED'; await Promise.allSettled([...this.sessions.values()].map(async s => { await s.job?.catch(() => {}); await s.close(); })); }
+  async close() { this.stopping = true; clearInterval(this.timer); for (const s of this.sessions.values()) s.mode = 'PAUSED'; await Promise.allSettled([...this.sessions.values()].map(async s => { await s.opening?.catch(() => {}); await s.close(); await s.job?.catch(() => {}); })); }
 }

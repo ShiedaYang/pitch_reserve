@@ -16,5 +16,23 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Allow the installed Chromium to use its sandbox on Ubuntu
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || true)" = 1 ]; then
+            browser=$(node --input-type=module -e "import {chromium} from 'playwright'; import {realpathSync} from 'node:fs'; process.stdout.write(realpathSync(chromium.executablePath()));")
+            sudo tee /etc/apparmor.d/pitch-reserve-ci >/dev/null <<EOF
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile pitch-reserve-ci "$browser" flags=(unconfined) {
+            userns,
+          }
+          EOF
+            sudo apparmor_parser -r /etc/apparmor.d/pitch-reserve-ci
+          fi
+      - name: Check sandboxed browser startup
+        run: node --input-type=module -e "import {chromium} from 'playwright'; const browser = await chromium.launch({channel:'chromium',headless:true,chromiumSandbox:true}); await browser.close();"
       - run: npm run check
-      - run: node --disable-warning=ExperimentalWarning --test --test-concurrency=1 tests/*.test.ts
+      - run: npm test
+      - run: npm run test:e2e

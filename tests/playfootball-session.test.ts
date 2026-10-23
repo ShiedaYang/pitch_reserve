@@ -23,3 +23,12 @@ test('manual verification recovery reuses the verified PlayFootball calendar wit
  session.check=async()=>{session.needsHumanVerification=false;session.status='ANONYMOUS_READABLE';return session.status;};session.getContext=async()=>({} as any);session.saveSession=async()=>{};
  assert.equal(await session.resumeAfterInactivity(),true);assert.equal(await session.page(resource),page);assert.equal(navigations,0,'do not immediately reload the calendar the user just verified');
 });
+
+test('failed session restoration closes the newly launched browser and releases its profile',async t=>{
+ const root=mkdtempSync(join(tmpdir(),'pitch-session-corrupt-'));const session=new ProviderSession('playfootball',root);let closed=0;
+ mkdirSync(join(root,'sessions'));writeFileSync(join(root,'sessions/playfootball.json'),'{broken');
+ const context={setDefaultTimeout(){},setDefaultNavigationTimeout(){},close:async()=>{closed++;}};
+ session.trackManualActivity=async()=>{};t.mock.method(chromium,'launchPersistentContext',async()=>context);
+ try{await assert.rejects(session.getContext());assert.equal(closed,1);assert.equal(session.context,undefined);assert.equal(session.opening,undefined);}
+ finally{rmSync(root,{recursive:true,force:true});}
+});
