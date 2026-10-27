@@ -42,8 +42,12 @@ test('Council reads date pages through an empty carousel transition without sele
     const unavailable=await scanCouncilCalendar(form,policy,session);
     assert.equal(unavailable.status,'PARTIAL');assert.equal(unavailable.observations.length,5);
     assert.match(unavailable.coverage.find(c=>c.date==='2026-10-27')!.note,/UNAVAILABLE/);
+    assert.equal(unavailable.coverage.find(c=>c.date==='2026-10-27')!.status,'UNKNOWN');
     assert.match(unavailable.navigation!,/6\/6/);
     assert.equal(await form.locator('#duration').inputValue(),'19');
+    const failure=t.mock.method(form,'waitForFunction',async()=>{throw new Error('fixture calendar failure');});
+    const failed=await scanCouncilCalendar(form,policy,session);
+    assert.ok(failed.coverage.every(day=>day.status==='ERROR'));assert.equal(failed.observations.length,0);failure.mock.restore();
     await form.locator('#time_selector').evaluate(el=>{(el as HTMLElement).hidden=false;el.innerHTML='<li class="availability-available"><a class="select-time">18:00</a><span>£38.00</span><span hidden>£999.00</span></li><li class="availability-available"><a class="select-time">18:00</a><span>£34.00 or £38.00</span></li>';});
     const quoted=await readCouncilSlots(form);assert.equal(quoted[0].price,'£38.00');assert.equal(quoted[1].price,null);
   } finally {await browser.close();}

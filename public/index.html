@@ -40,9 +40,9 @@
           <tbody id="calendar"><tr><td colspan="5" class="table-empty">正在读取场次…</td></tr></tbody>
         </table>
       </div>
-      <div class="table-help"><div class="legend"><span class="legend-item available-key">可订观察</span><span class="legend-item booked-key">不可订</span><span class="legend-item unreleased-key">暂无信息（未放号）</span><span class="legend-item unknown-key">暂无信息</span></div><span class="scroll-hint">左右滑动查看四个场地</span></div>
+      <div class="table-help"><div class="legend"><span class="legend-item available-key">可订观察</span><span class="legend-item booked-key">不可订</span><span class="legend-item unknown-key">暂未核实</span><span class="legend-item unreleased-key">暂无信息（未放号）</span><span class="legend-item query-error-key">查询失败</span></div><span class="scroll-hint">左右滑动查看四个场地</span></div>
       <p class="result-note">点击场次会在你的浏览器新标签页打开对应官网，登录与结算请在官网完成。价格与时长来自实际观察，缺失时标注待核实。每周最多选择一场，当前未保留库存。</p>
-      <details class="coverage"><summary>监测覆盖与官网入口 <span id="monitor-summary">4 个场地</span></summary><p class="section-description">这里显示每个入口的实际读取范围。未显示、未放号或查询失败统一显示“暂无信息”，不代表售罄，系统会继续监测。</p><div id="resources" class="resources"></div></details>
+      <details class="coverage"><summary>监测覆盖与官网入口 <span id="monitor-summary">4 个场地</span></summary><p class="section-description">这里显示每个入口的实际读取范围。未核实的日期显示“暂未核实”；官网明确未放号显示“暂无信息”；请求超时、读取异常或人机验证导致无法查询时显示“查询失败”。这些状态均不代表售罄。</p><div id="resources" class="resources"></div></details>
     </section>
     <section id="view-accounts" class="view" role="tabpanel" aria-labelledby="tab-accounts" hidden>
       <div class="page-heading"><div><h1>账号与接管</h1><p>三组账号独立保存，PlayFootball 两个场地共用一组。</p></div><button id="pause-all">全部暂停</button></div>

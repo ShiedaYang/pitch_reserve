@@ -17,7 +17,7 @@ export const lookaheads = ['7d', '14d', '1m', '2m', '3m'] as const;
 export type Lookahead = typeof lookaheads[number];
 export interface Policy { dateFrom: string; dateTo: string; timezone: string; intervalMinutes: number; autoHold: false; lookahead?: Lookahead | null; }
 export interface Observation { resourceId: string; date: string; start: string; duration: number | null; availability: Availability; price: string | null; note: string; bookingUrl?:string; priceNote?:string; }
-export interface Coverage { date: string; status: 'READ' | 'UNKNOWN' | 'OUTSIDE_RELEASE_WINDOW'; note: string; }
+export interface Coverage { date: string; status: 'READ' | 'UNKNOWN' | 'OUTSIDE_RELEASE_WINDOW' | 'ERROR'; note: string; }
 export interface ScanResult {
   observations: Observation[]; coverage: Coverage[]; summary: string;
   status: 'OK' | 'PARTIAL' | 'LOGIN_REQUIRED' | 'ERROR'; navigation?: string;

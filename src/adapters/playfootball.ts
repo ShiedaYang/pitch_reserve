@@ -58,7 +58,7 @@ export async function scanPlayFootball(page: Page, resource: Resource, policy: P
   const reject = page.getByRole('button', { name: 'Reject optional cookies', exact: true });
   if (await reject.isVisible()) { session.assertAutomatic(); await session.webAction(()=>reject.click()); }
   const reference = dateReference||londonDate();
-  const wanted = targetDates(policy,reference,dateReference?new Date(`${reference}T12:00:00Z`):new Date()); const byDate = new Map<string, Observation>(); let navigation = '未尝试';
+  const wanted = targetDates(policy,reference,dateReference?new Date(`${reference}T12:00:00Z`):new Date()); const byDate = new Map<string, Observation>(); let navigation = '未尝试';let navigationFailed=false;
   const maxWeeks=Math.min(16,Math.max(1,Math.ceil((Date.parse(policy.dateTo)-Date.parse(reference))/604800000)+2));
   for (let week = 0; week < maxWeeks; week++) {
     session.assertAutomatic(); const snapshot = await readCalendar(page);
@@ -68,8 +68,8 @@ export async function scanPlayFootball(page: Page, resource: Resource, policy: P
     if(week===maxWeeks-1){navigation='已达本轮安全翻页上限，剩余日期待下轮检查';break;}
     const next = page.locator('.bookings-calendar-date > button').filter({ has: page.locator('[data-icon="chevron-right"]') });
     if (await next.count() !== 1 || !await next.isEnabled()) { navigation = week ? '已翻周，已到当前导航边界' : '下一周按钮不可用'; break; }
-    session.assertAutomatic(); await session.webAction(()=>next.click());
     try {
+      session.assertAutomatic(); await session.webAction(()=>next.click());
       await page.waitForFunction(old => {
         const label = (document.querySelector('.bookings-calendar-picker') as HTMLElement)?.innerText;
         return !!label && label !== old && !!document.querySelector('.booking-slot');
@@ -78,9 +78,9 @@ export async function scanPlayFootball(page: Page, resource: Resource, policy: P
       await page.waitForFunction(old => Array.from(document.querySelectorAll('.bookings-calendar-weekday')).map(x => (x as HTMLElement).innerText.replace(/\s+/g, ' ')).join('|') !== old,
         snapshot.headers.join('|'), { timeout: 10000 });
       navigation = '翻周成功';
-    } catch { navigation = '翻周未完成；未把原周库存套用到新日期'; break; }
+    } catch { session.assertAutomatic();navigationFailed=true;navigation = '翻周未完成；未把原周库存套用到新日期'; break; }
   }
-  const coverage: Coverage[] = wanted.map(date => byDate.has(date) ? { date, status: 'READ', note: '已读取18:00具体时间块' } : { date, status: 'UNKNOWN', note: '未扫描到该日期；未开放与翻页失败尚未区分' });
+  const coverage: Coverage[] = wanted.map(date => byDate.has(date) ? { date, status: 'READ', note: '已读取18:00具体时间块' } : { date, status: navigationFailed?'ERROR':'UNKNOWN', note: navigationFailed?'翻周未完成，无法读取该日期':'未扫描到该日期；尚未核实是否开放' });
   const complete = coverage.every(x => x.status === 'READ');
   return { observations: [...byDate.values()], coverage, status: complete ? 'OK' : 'PARTIAL', navigation,
     summary: `已读取 ${byDate.size}/${wanted.length} 个目标日期；${navigation}。仅监测，未点击具体可订场次。` };

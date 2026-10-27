@@ -78,7 +78,7 @@ test('PlayFootball login spaces navigation, panel, both fields and submit withou
   }finally{await browser.close();}
 });
 
-test('calendar cookie dismissal and week navigation use the shared gap and never select a slot',async()=>{
+test('calendar cookie dismissal and week navigation use the shared gap and never select a slot',async t=>{
   const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true,timeout:30000});
   const clock=fakeClock();const starts:number[]=[];
   try{
@@ -104,5 +104,11 @@ test('calendar cookie dismissal and week navigation use the shared gap and never
     assert.deepEqual(result.observations.map(row=>row.date),['2026-11-02','2026-11-09']);
     assert.ok(result.observations.every(row=>row.price==='£85.00'));
     assert.equal(await page.locator('body').getAttribute('data-booked'),null);
+    await page.goto(resources[2].url);
+    t.mock.method(page,'waitForFunction',async()=>{throw new Error('fixture week timeout');});
+    const partial=await scanPlayFootball(page,resources[2],{...initialPolicy(),dateFrom:'2026-11-02',dateTo:'2026-11-10'},session,'2026-10-15');
+    assert.equal(partial.coverage.find(day=>day.date==='2026-11-02')?.status,'READ');
+    assert.equal(partial.coverage.find(day=>day.date==='2026-11-09')?.status,'ERROR');
+    assert.equal(partial.observations[0].price,'£85.00');
   }finally{await browser.close();}
 });

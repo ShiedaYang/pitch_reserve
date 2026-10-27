@@ -15,6 +15,7 @@ colors:
   amber: "#855a19"
   amber-soft: "#fbf4e6"
   red: "#a13434"
+  red-soft: "#fbeeee"
 typography:
   headline:
     fontFamily: '"Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif'
@@ -148,7 +149,7 @@ The palette is restrained and cool, with semantic green and amber reserved for m
 
 - **Observed green** (`green`, `green-soft`): available observations and normal monitoring tags.
 - **Caution amber** (`amber`, `amber-soft`): unknown observations, stale notes and manual/warning tags.
-- **Error red** (`red`): connection and operation errors.
+- **Error red** (`red`): connection and operation errors, including calendar query failures.
 
 **The Explicit State Rule.** Pair every operational color with its visible state text. Unknown, unread and unreleased observations must stay distinguishable from unavailable inventory.
 
@@ -204,7 +205,7 @@ Resources, account groups, settings and activity use white bordered containers. 
 
 ### Observation cells
 
-Available cells are pale green links. The price is the strongest line, followed by actual duration, checked time, stale warning where applicable, and the underlined official-site action with a small inline external-link icon. Unknown cells use amber text; unreleased cells use a pale neutral fill. Both use the leading label “暂无信息”; release dates and reasons remain alongside it or in the tooltip. Nearby alternatives count as unavailable at the requested venue. All cells retain minimum height (62px), including nonavailable and mobile cells, while available cells grow with their evidence.
+Available cells are pale green links. The price is the strongest line, followed by actual duration, checked time, stale warning where applicable, and the underlined official-site action with a small inline external-link icon. Unverified cells read “暂未核实” in amber on a pale yellow surface. Confirmed release limits read “暂无信息” on the existing gray surface, with release dates when known. Query failures read “查询失败” in error red on a pale red surface. Reasons remain in the tooltip. Unknown availability within a read page remains unverified; failed queries never become confirmed unavailable inventory. Confirmed available, booked and unavailable observations keep their existing styles even when other dates fail. Nearby alternatives count as unavailable at the requested venue. All cells retain minimum height (62px), including nonavailable and mobile cells, while available cells grow with their evidence.
 
 Keep observed prices and durations exact. Missing values read “价格待核实” or “结束时间待核实”; stale observations carry “历史观察 · 需重新查验”. Links open the official site in the visiting user's browser, so their presentation must not imply a reservation or guaranteed inventory.
 

@@ -66,7 +66,7 @@ export class Monitor {
   private publishBlockedResources(session:ProviderSession,scanned:Resource){
     const attention=session.attention;if(session.mode!=='MANUAL_CONTROL'||!attention)return;
     for(const resource of resources.filter(row=>row.provider===session.id&&row.id!==scanned.id))this.store.saveScan(resource,{
-      status:'PARTIAL',observations:[],coverage:targetDates(this.store.policy()).map(date=>({date,status:'UNKNOWN',note:attention.message})),
+      status:'PARTIAL',observations:[],coverage:targetDates(this.store.policy()).map(date=>({date,status:'ERROR',note:attention.message})),
       summary:`${attention.message.startsWith('暂无信息')?'':'暂无信息：'}${attention.message} 同一网站的此场地尚未查询，等待人工接管。`
     });
   }
@@ -76,7 +76,7 @@ export class Monitor {
     for(let attempt=0;attempt<2;attempt++)try {
       attemptNo=attempt+1;stage='OPEN_PAGE';const page = await session.page(resource);
       const challenge=await session.challengePage();session.assertAutomatic();
-      if(challenge){const message='暂无信息：官网出现人机验证，请手动接管完成验证；验证期间停止自动刷新。';await session.requireManual('HUMAN_VERIFICATION',message,challenge);this.store.incidents.report(session.id,'HUMAN_VERIFICATION',message);result={status:'PARTIAL',observations:[],coverage:targetDates(policy).map(date=>({date,status:'UNKNOWN',note:'官网需要人机验证'})),summary:message};break;}
+      if(challenge){const message='暂无信息：官网出现人机验证，请手动接管完成验证；验证期间停止自动刷新。';await session.requireManual('HUMAN_VERIFICATION',message,challenge);this.store.incidents.report(session.id,'HUMAN_VERIFICATION',message);result={status:'PARTIAL',observations:[],coverage:targetDates(policy).map(date=>({date,status:'ERROR',note:'官网需要人机验证'})),summary:message};break;}
       stage='CALENDAR';
       if (resource.provider === 'playfootball') result = await scanPlayFootball(page, resource, policy, session);
       else if (resource.provider === 'ggcb') result = await scanGgcb(page, resource, policy, session);
@@ -98,7 +98,7 @@ export class Monitor {
       if (error instanceof Interrupted) {this.store.event(`${resource.name}：本轮检查因人工操作中止`,{provider:session.id,resourceId:resource.id,stage,runId,code:'INTERRUPTED',details:{cancelled:true,durationMs:Date.now()-started}});return;}
       if(session.mode!=='AUTOMATION')return;
       const challenge=await session.challengePage().catch(()=>undefined);
-      if(challenge){const message='暂无信息：官网出现人机验证，请手动接管完成验证；验证期间停止自动刷新。';await session.requireManual('HUMAN_VERIFICATION',message,challenge);this.store.incidents.report(session.id,'HUMAN_VERIFICATION',message);result={status:'PARTIAL',observations:[],coverage:targetDates(policy).map(date=>({date,status:'UNKNOWN',note:'官网需要人机验证'})),summary:message};break;}
+      if(challenge){const message='暂无信息：官网出现人机验证，请手动接管完成验证；验证期间停止自动刷新。';await session.requireManual('HUMAN_VERIFICATION',message,challenge);this.store.incidents.report(session.id,'HUMAN_VERIFICATION',message);result={status:'PARTIAL',observations:[],coverage:targetDates(policy).map(date=>({date,status:'ERROR',note:'官网需要人机验证'})),summary:message};break;}
       const timedOut=error instanceof Error&&/Timeout|timeout|超时/i.test(error.name+error.message);
       if(timedOut&&attempt===0){this.store.event(`${resource.name}：请求超时，关闭并重新打开官网后重试一次`,{level:'WARN',provider:session.id,resourceId:resource.id,stage:'RETRY',runId,code:'TIMEOUT',details:{attempt:attemptNo,...diagnoseError(error),action:'关闭出错标签页后重试一次'}});try{await session.reopenResource(resource);continue;}catch(reopenError){if(reopenError instanceof Interrupted)return;}}
       const issue=diagnoseError(error);this.store.event(`${resource.name}：只读检查失败`,{level:'ERROR',provider:session.id,resourceId:resource.id,stage,code:issue.code,runId,details:{...issue,attempt:attemptNo,durationMs:Date.now()-started,nextRetryAt:new Date(Date.now()+60000).toISOString()}});
@@ -107,7 +107,7 @@ export class Monitor {
       session.nextScanAt=Date.now()+60000;
       if(timedOut)await session.requireManual('TIMEOUT',kind,session.pages.get(resource.id));
       this.store.incidents.report(session.id,timedOut?'TIMEOUT':'SCAN_ERROR',kind);
-      result = { observations: [], coverage: targetDates(policy).map(date => ({ date, status: 'UNKNOWN', note: kind })), status: 'ERROR', summary: `暂无信息：${kind}；${timedOut?'已暂停该网站自动请求，页面恢复后空闲1分钟会自动检查。':'将在1分钟后自动重试。'}失败不代表没有空位。` };break;
+      result = { observations: [], coverage: targetDates(policy).map(date => ({ date, status: 'ERROR', note: kind })), status: 'ERROR', summary: `暂无信息：${kind}；${timedOut?'已暂停该网站自动请求，页面恢复后空闲1分钟会自动检查。':'将在1分钟后自动重试。'}失败不代表没有空位。` };break;
     }
     if(!result)return;
     result.observations=result.observations.map(observation=>({...observation,bookingUrl:resource.url,priceNote:observation.priceNote || (observation.price?'官网时段报价，结算前需复核':'官网报价尚未读取')}));

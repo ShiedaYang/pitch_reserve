@@ -28,7 +28,7 @@ A lightweight Windows/Linux console, local-only by default at 127.0.0.1:4318 wit
 - A durable availability-notification outbox records newly observed availability, deduplicates continuous availability, and retains delivery/retry/expiry state. Optional Feishu delivery supports user and group recipients, with explicit enabling, encrypted settings and per-recipient receipts.
 - Encrypted local credentials, visible saved usernames, fixed password masks and manual login takeover must remain usable.
 - Council monitoring automatically applies saved defaults and the explicitly saved address choice, then reads the calendar. Missing personal data or unchecked consent needs human input. No personal configuration belongs in source control.
-- Manual takeover returns to monitoring after one minute without trusted website or console activity, subject to login/challenge checks. Explicit pause stays paused. Missing, unreleased or unreadable inventory displays “暂无信息”, with its reason retained.
+- Manual takeover returns to monitoring after one minute without trusted website or console activity, subject to login/challenge checks. Explicit pause stays paused. Calendar cells distinguish unverified dates (“暂未核实”, yellow), confirmed release limits (“暂无信息”, gray), and failed queries (“查询失败”, red), with the reason retained. Confirmed observations keep their existing presentation.
 - The console requires an awake computer and running service.
 
 ## Brand Commitments
