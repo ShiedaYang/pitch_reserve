@@ -47,7 +47,8 @@ export async function authSignals(page:Page,provider:ProviderId) {
 
 // Only login forms on the fixed provider hosts are eligible. No registration,
 // CAPTCHA solving, booking selection, checkout or payment control is included.
-export async function submitLogin(page:Page,provider:ProviderId,credentials:Credentials,assertControl:()=>void):Promise<LoginResult> {
+export async function submitLogin(page:Page,provider:ProviderId,credentials:Credentials,assertControl:()=>void,
+  runAction:<T>(action:()=>Promise<T>)=>Promise<T>=async action=>{assertControl();return action();}):Promise<LoginResult> {
   try {
     assertControl(); const initial=await authSignals(page,provider);
     if(initial.authenticated)return {kind:'CURRENT_SESSION',message:'官网已有登录会话；输入的账号仅在下次登录时使用。'};
@@ -66,7 +67,7 @@ export async function submitLogin(page:Page,provider:ProviderId,credentials:Cred
       if(provider==='playfootball' && !openedPanel && trusted(page.mainFrame(),provider) && new URL(page.url()).hostname==='partners.playfootball.net') {
         const trigger=page.locator('a[role=button][href="#log-in-bar"]:visible');
         if(await trigger.count()===1 && await page.locator('#log-in-bar input[type=password]').count()===1 && !signals.password) {
-          assertControl();await trigger.click();openedPanel=true;
+          assertControl();await runAction(()=>trigger.click());openedPanel=true;
         }
       }
       loginFrame=page.frames().find(frame=>trusted(frame,provider) && frame===page.mainFrame());
@@ -81,7 +82,9 @@ export async function submitLogin(page:Page,provider:ProviderId,credentials:Cred
     const account=form.locator('input[autocomplete=username]:visible,input[type=email]:visible,input[name=username i]:visible,input[name=email i]:visible');
     const submit=form.getByRole('button',{name:/^(?:log\s*in|sign\s*in)$/i});
     if(await account.count()!==1 || await submit.count()!==1)return {kind:'MANUAL_REQUIRED',message:'账号或登录按钮不唯一，请在官网手动接管。'};
-    assertControl();await account.fill(credentials.username);assertControl();await password.fill(credentials.password);assertControl();await submit.click();
+    assertControl();await runAction(()=>account.fill(credentials.username));
+    assertControl();await runAction(()=>password.fill(credentials.password));
+    assertControl();await runAction(()=>submit.click());
     for(let retry=0;retry<24;retry++) {
       assertControl();await followCouncilHome();const signals=await authSignals(page,provider);
       if(signals.authenticated)return {kind:'AUTHENTICATED',message:'官网已确认登录成功。'};
