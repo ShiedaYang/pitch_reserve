@@ -50,6 +50,10 @@ test('GGCB recovers a failed month request, correlates day responses and quotes 
     assert.equal(await page.locator('[name=wc_bookings_field_start_date_time]').inputValue(),'');
     assert.equal(await page.evaluate(()=>{const w=window as unknown as {orders:number;selected:number};return w.orders+w.selected;}),0);
     assert.ok(actions.every(action=>['wc_bookings_get_blocks','wc_bookings_calculate_costs'].includes(action)));
+    await context.route('**/*wc-ajax=wc_bookings_find_booked_day_blocks*',route=>route.abort('failed'));
+    await page.goto(resources[0].url);
+    const failed=await scanGgcb(page,resources[0],{...initialPolicy(),dateFrom:'2026-11-02',dateTo:'2026-11-03'},session,{today:'2026-10-27',calendarTimeout:200,responseTimeout:500});
+    assert.equal(failed.status,'ERROR');assert.ok(failed.coverage.every(day=>day.status==='ERROR'));
   }finally{await browser.close();}
 });
 

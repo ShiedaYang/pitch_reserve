@@ -82,18 +82,21 @@ function renderCalendar(){
   if($('available-only').checked&&!cells.some(x=>x.o?.availability==='AVAILABLE'))continue;
   const date=new Date(d+'T12:00:00Z');const weekday=date.getUTCDay();const monday=new Date(date);monday.setUTCDate(date.getUTCDate()-(weekday+6)%7);const week=monday.toISOString().slice(0,10);
   rows.push(`<tr class="${previousWeek!==week?'week-boundary':''}" data-date-row="${d}"><th scope="row"><span class="day">${d.slice(5).replace('-',' / ')} <span>周${['日','一','二','三','四','五','六'][weekday]}</span></span><small>${week.slice(5)} 当周</small></th>${cells.map(({r,o,c})=>{
-   const names={AVAILABLE:'18:00 可订观察',BOOKED:'18:00 不可订',UNAVAILABLE:'暂无可选时段',UNKNOWN:'暂无信息'};const available=o?.availability==='AVAILABLE';
-   const outside=c?.status==='OUTSIDE_RELEASE_WINDOW';const text=o?names[o.availability]:'暂无信息';
+   const names={AVAILABLE:'18:00 可订观察',BOOKED:'18:00 不可订',UNAVAILABLE:'暂无可选时段'};const available=o?.availability==='AVAILABLE';const observed=!!names[o?.availability];
+   const outside=c?.status==='OUTSIDE_RELEASE_WINDOW';const provider=state.providers.find(p=>p.id===r.provider);
+   const failed=c?.status==='ERROR'||(c&&r.latest?.result.status==='ERROR')||!!provider?.attention;
+   const text=observed?names[o.availability]:outside?'暂无信息':failed?'查询失败':'暂未核实';
+   const cellClass=observed?o.availability.toLowerCase():outside?'unreleased':failed?'query-error':'unknown';
    const contents=`${esc(text)}${available?`<strong class="slot-price">${esc(o.price||'价格待核实')}</strong><small>${o.duration?esc(o.duration)+' 分钟':'结束时间待核实'}${r.provider==='ggcb'?' · 时长偏好待确认':''}</small><small>${dateFmt(r.latest.at)} 已查</small>${isStale(r)?'<small class="stale-note">历史观察 · 需重新查验</small>':''}<small><span class="slot-action">打开官网 ${externalIcon}</span></small>`:outside?`<small>${esc(c.note?.match(/预计(\d{4}-\d{2}-\d{2})/)?.[1]||'等待官网开放')}</small>`:''}`;
-   const title=esc((o?.note||c?.note||'未检查')+(o?.priceNote?' · '+o.priceNote:'')+' · '+dateFmt(r.latest?.at));
-   return `<td>${available?`<a class="cell available slot-link" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" data-slot data-resource="${r.id}" data-date="${d}" data-provider="${r.provider}" title="${title}">${contents}</a>`:`<span class="cell ${outside?'unreleased':(o?.availability||'UNKNOWN').toLowerCase()}" title="${title}">${contents}</span>`}</td>`;
+   const title=esc((o?.note||c?.note||provider?.attention?.message||'尚未核实该日期的场次')+(o?.priceNote?' · '+o.priceNote:'')+' · '+dateFmt(r.latest?.at));
+   return `<td>${available?`<a class="cell available slot-link" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" data-slot data-resource="${r.id}" data-date="${d}" data-provider="${r.provider}" title="${title}">${contents}</a>`:`<span class="cell ${cellClass}" title="${title}">${contents}</span>`}</td>`;
   }).join('')}</tr>`);previousWeek=week;
  }
  setHTML('calendar',rows.join(''));
  $('calendar-grid').hidden=rows.length===0;$('calendar-empty').hidden=rows.length!==0;
- if(!rows.length)setHTML('calendar-empty',$('available-only').checked?'当前没有可订观察，暂无信息的日期仍会继续检查。<button data-show-all>查看全部目标日期</button>':'当前范围内没有未来的周一至周四，请调整监测日期。<button data-go="settings">调整日期范围</button>');
+ if(!rows.length)setHTML('calendar-empty',$('available-only').checked?'当前没有可订观察，其他日期仍会继续检查。<button data-show-all>查看全部目标日期</button>':'当前范围内没有未来的周一至周四，请调整监测日期。<button data-go="settings">调整日期范围</button>');
  $('results-caption').textContent=`${targetDates[0]||state.policy.dateFrom} 至 ${state.policy.dateTo} · ${targetDates.length} 个日期 · ${availableSlots.length} 项可订观察`;
- setHTML('next-slots',availableSlots.length?`<span>近期可订观察</span>${availableSlots.slice(0,2).map(({r,o})=>`<a class="next-slot" data-slot data-resource="${r.id}" data-date="${o.date}" data-provider="${r.provider}" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${o.date.slice(5)} ${esc(r.name)}<strong>${esc(o.price||'价格待核实')}</strong>${isStale(r)?' <small>历史观察，需复核</small>':''}</a>`).join('')}${availableSlots.length>2?'<button class="text-button" data-filter-available>查看全部可订日期</button>':''}`:$('available-only').checked?'暂未发现可订观察。取消筛选可查看其他日期的监测状态。':'暂未发现可订观察。下表保留全部目标日期，暂无信息不代表售罄。');
+ setHTML('next-slots',availableSlots.length?`<span>近期可订观察</span>${availableSlots.slice(0,2).map(({r,o})=>`<a class="next-slot" data-slot data-resource="${r.id}" data-date="${o.date}" data-provider="${r.provider}" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${o.date.slice(5)} ${esc(r.name)}<strong>${esc(o.price||'价格待核实')}</strong>${isStale(r)?' <small>历史观察，需复核</small>':''}</a>`).join('')}${availableSlots.length>2?'<button class="text-button" data-filter-available>查看全部可订日期</button>':''}`:$('available-only').checked?'暂未发现可订观察。取消筛选可查看其他日期的监测状态。':'暂未发现可订观察。下表保留全部目标日期，未核实、暂无信息或查询失败均不代表售罄。');
 }
 function render(){if(!state)return;
  renderProviders();renderResources();renderCalendar();renderFeishu();

@@ -21,7 +21,7 @@ export async function scanGgcb(page:Page,resource:Resource,policy:Policy,session
         await navigateGgcbMonth(page,month,()=>session.assertAutomatic(),options.calendarTimeout||15000);ready=true;break;
       }catch {session.assertAutomatic();}
     }
-    if(!ready) {failures++;for(const date of openDates.filter(date=>date.startsWith(month)))coverage.set(date,{date,status:'UNKNOWN',note:'月份请求未完成，已有限重试；未使用旧月份结果'});continue;}
+    if(!ready) {failures++;for(const date of openDates.filter(date=>date.startsWith(month)))coverage.set(date,{date,status:'ERROR',note:'月份请求未完成，已有限重试；未使用旧月份结果'});continue;}
     visited.push(month);
     const cells=await form.locator('td[class*="date-year-"]').evaluateAll(elements=>elements.map(el=>{
       const cls=el.className;const year=cls.match(/date-year-(\d+)/)?.[1];const month=cls.match(/date-month-(\d+)/)?.[1];const day=cls.match(/date-date-(\d+)/)?.[1];
@@ -31,7 +31,7 @@ export async function scanGgcb(page:Page,resource:Resource,policy:Policy,session
       session.assertAutomatic();const cell=cells.find(cell=>cell.date===date);
       if(!cell?.bookable) {coverage.set(date,{date,status:'UNKNOWN',note:'官网日期不可选择，尚未区分售罄或关闭'});continue;}
       const day=new Date(`${date}T12:00:00Z`);const link=form.locator(`td.date-year-${day.getUTCFullYear()}.date-month-${day.getUTCMonth()}.date-date-${day.getUTCDate()} a`);
-      if(await link.count()!==1 || !await link.isVisible()) {coverage.set(date,{date,status:'UNKNOWN',note:'日期标为可订但缺少可见日期按钮'});continue;}
+      if(await link.count()!==1 || !await link.isVisible()) {coverage.set(date,{date,status:'ERROR',note:'日期标为可订但缺少可见日期按钮'});continue;}
       const response=page.waitForResponse(response=>isGgcbDayResponse(response,date),{timeout:options.responseTimeout||12000}).catch(()=>null);
       let stage='日期点击';
       try {
@@ -49,10 +49,10 @@ export async function scanGgcb(page:Page,resource:Resource,policy:Policy,session
         }else if(times.length || /No blocks available/i.test(await form.locator('.block-picker').innerText())) {
           observations.push({resourceId:resource.id,date,start:'18:00',duration:55,availability:'UNAVAILABLE',price:null,note:times.length?'官网该日期可选时间列表没有18:00':'官网日期查询返回No blocks available；具体原因未说明'});
           coverage.set(date,{date,status:'READ',note:'已读取对应日期响应，当前没有18:00可选时段'});
-        }else coverage.set(date,{date,status:'UNKNOWN',note:'时段结构未识别，不推断无空位'});
+        }else coverage.set(date,{date,status:'ERROR',note:'时段结构未识别，不推断无空位'});
       }catch {
-        await response;session.assertAutomatic();coverage.set(date,{date,status:'UNKNOWN',note:`${stage}未完成，不使用上次日期的结果`});
-        try {await page.reload({waitUntil:'domcontentloaded'});session.assertAutomatic();await navigateGgcbMonth(page,month,()=>session.assertAutomatic(),options.calendarTimeout||15000);}catch {session.assertAutomatic();failures++;break;}
+        await response;session.assertAutomatic();coverage.set(date,{date,status:'ERROR',note:`${stage}未完成，不使用上次日期的结果`});
+        try {await page.reload({waitUntil:'domcontentloaded'});session.assertAutomatic();await navigateGgcbMonth(page,month,()=>session.assertAutomatic(),options.calendarTimeout||15000);}catch {session.assertAutomatic();failures++;for(const remaining of openDates.filter(day=>day.startsWith(month)&&!coverage.has(day)))coverage.set(remaining,{date:remaining,status:'ERROR',note:'月份恢复失败，无法继续读取该日期'});break;}
       }
       await page.waitForTimeout(350);
     }

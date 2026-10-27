@@ -13,6 +13,7 @@
   --amber: #855a19;
   --amber-soft: #fbf4e6;
   --red: #a13434;
+  --red-soft: #fbeeee;
   --radius: 12px;
   font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   font-size: 14px;
@@ -110,8 +111,9 @@ a.cell.available:hover { background: #dceee3; }
 .slot-action { display: inline-flex; align-items: center; gap: 4px; text-decoration: underline; text-underline-offset: 3px; }
 .external-icon { width: 12px; height: 12px; flex-shrink: 0; stroke: currentColor; stroke-width: 1.6; fill: none; }
 .cell.unreleased { background: #f7f8fa; color: #677382; }
-.cell.unknown { color: var(--amber); }
+.cell.unknown { color: var(--amber); background: var(--amber-soft); }
 .cell.unknown small { color: #735628; }
+.cell.query-error { color: var(--red); background: var(--red-soft); }
 .table-empty { padding: 46px 24px; text-align: center; color: var(--muted); }
 .table-empty button { display: block; margin: 14px auto 0; }
 .empty-state { padding: 35px 22px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; color: var(--muted); text-align: center; }
@@ -124,6 +126,7 @@ a.cell.available:hover { background: #dceee3; }
 .booked-key::before { background: #66778a; }
 .unreleased-key::before { background: #a0acb8; }
 .unknown-key::before { background: var(--amber); }
+.query-error-key::before { background: var(--red); }
 .scroll-hint { display: none; color: var(--muted); }
 .result-note { color: var(--muted); font-size: 12px; margin-top: 13px; max-width: 100ch; }
 summary { cursor: pointer; font-weight: 600; min-height: 42px; padding: 10px 0; }

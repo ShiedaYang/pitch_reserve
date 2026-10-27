@@ -146,7 +146,8 @@ try {
  assert.equal(await page.locator('.slot-price').first().innerText(),'£100');
  assert.match(await page.locator('.slot-link').nth(1).innerText(),/价格待核实/);
  assert.match(await page.locator('td .unreleased').first().innerText(),/暂无信息/);
- assert.match(await page.locator('td .unknown').first().innerText(),/暂无信息/);
+ assert.match(await page.locator('td .unknown').first().innerText(),/暂未核实/);
+ assert.equal(await page.locator('td .query-error').first().innerText(),'查询失败');
  assert.match(await page.locator('.slot-link').first().innerText(),/历史观察/);
  await page.locator('#available-only').check();assert.equal(await page.locator('#calendar tr').count(),1);
  await page.locator('#message').evaluate(el=>{el.textContent='界面验证用示例数据，不代表实时库存。';});
