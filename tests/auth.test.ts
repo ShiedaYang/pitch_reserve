@@ -49,6 +49,8 @@ test('three account groups submit only their login form and never expose unsaved
   const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true,timeout:30000});
   const store=new Store(':memory:');const monitor=new Monitor(store,'.local/test-unused');
   const posts:Array<{provider:string;username:string;password:string}>=[];
+  let loginTime=0;
+  monitor.sessions.set('playfootball',new ProviderSession('playfootball','.local/test-unused',undefined,{now:()=>loginTime,sleep:async ms=>{loginTime+=ms;}}));
   try {
     for(const provider of providerIds) {
       const context=await browser.newContext();

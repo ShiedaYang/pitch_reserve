@@ -12,6 +12,8 @@ import type { Mode, ProviderId, SessionStatus, Resource } from './domain.ts';
 import {browserOptions} from './runtime-config.ts';
 
 export class Interrupted extends Error {}
+export interface WebActionClock { now():number; sleep(ms:number):Promise<void>; }
+const webActionClock:WebActionClock={now:()=>performance.now(),sleep:ms=>new Promise(resolve=>setTimeout(resolve,ms))};
 let browserLaunch:Promise<unknown>|undefined;
 export async function queueBrowserLaunch<T>(launch:()=>Promise<T>):Promise<T>{
   const job=(browserLaunch??Promise.resolve()).catch(()=>{}).then(launch);browserLaunch=job;
@@ -28,6 +30,8 @@ export class ProviderSession {
   needsHumanVerification=false;
   nativeVerification:NativeVerification;
   private verifiedPage?:Page;
+  private nextWebActionAt=0;
+  private readonly actionClock:WebActionClock;
   attention?:{kind:'TIMEOUT'|'HUMAN_VERIFICATION';message:string;at:string};
   get mode(){return this.#mode;}
   set mode(value:Mode){this.modeRevision++;if(value==='MANUAL_CONTROL'&&this.#mode!==value){this.lastManualActivityAt=Date.now();this.nextIdleCheckAt=0;}this.#mode=value;}
@@ -41,7 +45,7 @@ export class ProviderSession {
       try{await this.exclusive(async()=>{
         const context=await this.getContext();if(this.mode!=='MANUAL_CONTROL')throw new Interrupted();
         const resource=resources.find(row=>row.provider===this.id)!;const page=await context.newPage();this.manualPage=page;this.pages.set(resource.id,page);this.nativeVerification.clear();
-        await page.goto(resource.url,{waitUntil:'domcontentloaded'});
+        await this.webAction(()=>page.goto(resource.url,{waitUntil:'domcontentloaded'}),()=>{if(this.mode!=='MANUAL_CONTROL'||this.lastManualActivityAt!==activity)throw new Interrupted();});
         await page.locator('.bookings-calendar,.booking-slot').first().waitFor({state:'visible',timeout:12000}).catch(()=>{});
       });}catch{return false;}
     }
@@ -98,7 +102,8 @@ export class ProviderSession {
   }
   async signInStored(expectedMode:Mode,reuseExisting=false):Promise<LoginResult> {
     const credentials=this.#credentials;if(!credentials)throw new Error('请输入账号和密码');
-    const assertControl=()=>{if(this.mode!==expectedMode || this.#credentials!==credentials)throw new Interrupted('已暂停，等待人工接管');};
+    const revision=this.modeRevision;
+    const assertControl=()=>{if(this.mode!==expectedMode || this.modeRevision!==revision || this.#credentials!==credentials)throw new Interrupted('已暂停，等待人工接管');};
     assertControl();const context=await this.getContext();assertControl();
     if(this.manualPage && !this.manualPage.isClosed() && (await authSignals(this.manualPage,this.id)).authenticated) {
       this.status='AUTHENTICATED';await this.saveSession();
@@ -107,9 +112,9 @@ export class ProviderSession {
     try {
       if(!this.loginPage || this.loginPage.isClosed()){this.loginPage=await context.newPage();reuseExisting=false;}
       if(reuseExisting){const signals=await authSignals(this.loginPage,this.id);reuseExisting=signals.password || signals.challenge;}
-      assertControl();if(!reuseExisting)await this.loginPage.goto(loginUrls[this.id],{waitUntil:'domcontentloaded'});
+      assertControl();if(!reuseExisting)await this.webAction(()=>this.loginPage!.goto(loginUrls[this.id],{waitUntil:'domcontentloaded'}),assertControl);
       this.manualPage=this.loginPage;await this.loginPage.bringToFront();
-      const result=await submitLogin(this.loginPage,this.id,credentials,assertControl);
+      const result=await submitLogin(this.loginPage,this.id,credentials,assertControl,action=>this.webAction(action,assertControl));
       this.loginResult=result;
       if(result.kind==='AUTHENTICATED' || result.kind==='CURRENT_SESSION') {this.status='AUTHENTICATED';await this.saveSession();}
       else {this.status='LOGIN_REQUIRED';this.automaticLoginAllowed=false;this.mode='MANUAL_CONTROL';this.recordManualActivity();}
@@ -120,7 +125,7 @@ export class ProviderSession {
       return this.loginResult={kind:'FAILED',message:'自动登录未完成，请在专用浏览器检查页面后重试。'};
     }
   }
-  constructor(id: ProviderId, root: string, vault?:CredentialVault) { this.id = id; this.root = root;this.vault=vault;this.nativeVerification=new NativeVerification(root,id);if(this.nativeVerification.pending){this.mode='MANUAL_CONTROL';this.needsHumanVerification=true;this.attention={kind:'HUMAN_VERIFICATION',message:'普通浏览器验证中：请完成验证并关闭该专用窗口，随后自动接回只读监测。',at:new Date().toISOString()};} }
+  constructor(id: ProviderId, root: string, vault?:CredentialVault,clock:WebActionClock=webActionClock) { this.id = id; this.root = root;this.vault=vault;this.actionClock=clock;this.nativeVerification=new NativeVerification(root,id);if(this.nativeVerification.pending){this.mode='MANUAL_CONTROL';this.needsHumanVerification=true;this.attention={kind:'HUMAN_VERIFICATION',message:'普通浏览器验证中：请完成验证并关闭该专用窗口，随后自动接回只读监测。',at:new Date().toISOString()};} }
   async trackManualActivity(context:BrowserContext){
     await context.exposeBinding('__pitchManualActivity',()=>this.recordManualActivity());
     const install=()=>{
@@ -135,6 +140,20 @@ export class ProviderSession {
     for(const page of context.pages())for(const frame of page.frames())await frame.evaluate(install).catch(()=>{});
   }
   assertAutomatic() { if (this.mode !== 'AUTOMATION') throw new Interrupted('已暂停，等待人工接管'); }
+  async webAction<T>(action:()=>Promise<T>,assertControl=()=>this.assertAutomatic()):Promise<T> {
+    const revision=this.modeRevision;
+    const check=()=>{assertControl();if(this.modeRevision!==revision)throw new Interrupted('已暂停，等待人工接管');};
+    check();
+    if(this.id!=='playfootball')return action();
+    // Both venues and login share this deadline, including failed/reopened pages.
+    while(this.nextWebActionAt>this.actionClock.now()) {
+      await this.actionClock.sleep(Math.min(100,this.nextWebActionAt-this.actionClock.now()));
+      check();
+    }
+    check();
+    try{return await action();}
+    finally{this.nextWebActionAt=this.actionClock.now()+10000;}
+  }
   async exclusive<T>(fn: () => Promise<T>): Promise<T> {
     if (this.job) throw new Error('该网站正在处理上一项操作，请稍后重试');
     const pending = Promise.resolve().then(fn); this.job = pending;
@@ -180,12 +199,16 @@ export class ProviderSession {
     const context = await this.getContext(); this.assertAutomatic();
     let page = this.pages.get(resource.id);
     if (!page || page.isClosed()) { page = await context.newPage(); this.pages.set(resource.id, page); }
-    this.assertAutomatic(); await page.goto(resource.url, { waitUntil: 'domcontentloaded' }); this.assertAutomatic();
+    this.assertAutomatic(); await this.webAction(()=>page!.goto(resource.url, { waitUntil: 'domcontentloaded' })); this.assertAutomatic();
     return page;
   }
   async reopenResource(resource:Resource){
     this.assertAutomatic();const current=resource.provider==='council'?await councilUserPage(this):this.pages.get(resource.id);
-    if(current&&!current.isClosed()){if(this.manualPage===current)this.manualPage=undefined;if(this.loginPage===current)this.loginPage=undefined;for(const [key,page] of this.pages)if(page===current)this.pages.delete(key);await current.close();}
+    if(current&&!current.isClosed()){
+      await this.webAction(()=>current.close());
+      if(this.manualPage===current)this.manualPage=undefined;if(this.loginPage===current)this.loginPage=undefined;
+      for(const [key,page] of this.pages)if(page===current)this.pages.delete(key);
+    }
     this.assertAutomatic();
   }
   async verifyInBrowser(){
@@ -217,7 +240,7 @@ export class ProviderSession {
       this.context=undefined;this.pages.clear();this.manualPage=undefined;this.loginPage=undefined;this.attention=undefined;this.needsHumanVerification=false;this.status='UNKNOWN';
       const context=await this.getContext();assertControl();
       const page=await context.newPage();assertControl();this.pages.set(resource.id,page);this.manualPage=page;
-      try{await page.goto(resource.url,{waitUntil:'domcontentloaded'});}catch{assertControl();this.mode=previousMode==='PAUSED'?'PAUSED':'MANUAL_CONTROL';this.attention={kind:'TIMEOUT',message:'浏览器已重新打开，但官网加载未完成，请手动接管。',at:new Date().toISOString()};this.recordManualActivity();return;}
+      try{await this.webAction(()=>page.goto(resource.url,{waitUntil:'domcontentloaded'}),assertControl);}catch{assertControl();this.mode=previousMode==='PAUSED'?'PAUSED':'MANUAL_CONTROL';this.attention={kind:'TIMEOUT',message:'浏览器已重新打开，但官网加载未完成，请手动接管。',at:new Date().toISOString()};this.recordManualActivity();return;}
       assertControl();await page.bringToFront();const signals=await authSignals(page,this.id);assertControl();
       this.status=signals.password?'LOGIN_REQUIRED':signals.authenticated?'AUTHENTICATED':'UNKNOWN';this.needsHumanVerification=signals.challenge;
       this.mode=previousMode;

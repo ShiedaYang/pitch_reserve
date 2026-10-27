@@ -56,7 +56,7 @@ export async function readCalendar(page: Page): Promise<CalendarSnapshot> {
 export async function scanPlayFootball(page: Page, resource: Resource, policy: Policy, session: ProviderSession, dateReference?:string): Promise<ScanResult> {
   await page.locator('.booking-slot').first().waitFor({ state: 'attached' }); session.assertAutomatic();
   const reject = page.getByRole('button', { name: 'Reject optional cookies', exact: true });
-  if (await reject.isVisible()) { session.assertAutomatic(); await reject.click(); }
+  if (await reject.isVisible()) { session.assertAutomatic(); await session.webAction(()=>reject.click()); }
   const reference = dateReference||londonDate();
   const wanted = targetDates(policy,reference,dateReference?new Date(`${reference}T12:00:00Z`):new Date()); const byDate = new Map<string, Observation>(); let navigation = '未尝试';
   const maxWeeks=Math.min(16,Math.max(1,Math.ceil((Date.parse(policy.dateTo)-Date.parse(reference))/604800000)+2));
@@ -68,7 +68,7 @@ export async function scanPlayFootball(page: Page, resource: Resource, policy: P
     if(week===maxWeeks-1){navigation='已达本轮安全翻页上限，剩余日期待下轮检查';break;}
     const next = page.locator('.bookings-calendar-date > button').filter({ has: page.locator('[data-icon="chevron-right"]') });
     if (await next.count() !== 1 || !await next.isEnabled()) { navigation = week ? '已翻周，已到当前导航边界' : '下一周按钮不可用'; break; }
-    session.assertAutomatic(); await next.click();
+    session.assertAutomatic(); await session.webAction(()=>next.click());
     try {
       await page.waitForFunction(old => {
         const label = (document.querySelector('.bookings-calendar-picker') as HTMLElement)?.innerText;
