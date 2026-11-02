@@ -10,6 +10,7 @@ import type {Credentials,LoginResult} from './auth.ts';
 import type {CredentialVault} from './credential-vault.ts';
 import type { Mode, ProviderId, SessionStatus, Resource } from './domain.ts';
 import {browserOptions} from './runtime-config.ts';
+import {PlayFootballResponses,WebsiteResponseError} from './playfootball-responses.ts';
 
 export class Interrupted extends Error {}
 export interface WebActionClock { now():number; sleep(ms:number):Promise<void>; }
@@ -28,7 +29,9 @@ export class ProviderSession {
   lastManualActivityAt=0;
   nextIdleCheckAt=0;
   needsHumanVerification=false;
+  lastHumanVerifiedAt?:number;
   nativeVerification:NativeVerification;
+  responses?:PlayFootballResponses;
   private verifiedPage?:Page;
   private nextWebActionAt=0;
   private readonly actionClock:WebActionClock;
@@ -121,11 +124,12 @@ export class ProviderSession {
       return result;
     } catch(error) {
       if(error instanceof Interrupted)throw error;
+      if(error instanceof WebsiteResponseError&&expectedMode==='AUTOMATION')throw error;
       this.mode='MANUAL_CONTROL';this.recordManualActivity();this.automaticLoginAllowed=false;this.status='UNKNOWN';
       return this.loginResult={kind:'FAILED',message:'自动登录未完成，请在专用浏览器检查页面后重试。'};
     }
   }
-  constructor(id: ProviderId, root: string, vault?:CredentialVault,clock:WebActionClock=webActionClock) { this.id = id; this.root = root;this.vault=vault;this.actionClock=clock;this.nativeVerification=new NativeVerification(root,id);if(this.nativeVerification.pending){this.mode='MANUAL_CONTROL';this.needsHumanVerification=true;this.attention={kind:'HUMAN_VERIFICATION',message:'普通浏览器验证中：请完成验证并关闭该专用窗口，随后自动接回只读监测。',at:new Date().toISOString()};} }
+  constructor(id: ProviderId, root: string, vault?:CredentialVault,clock:WebActionClock=webActionClock) { this.id = id; this.root = root;this.vault=vault;this.actionClock=clock;this.responses=id==='playfootball'?new PlayFootballResponses():undefined;this.nativeVerification=new NativeVerification(root,id);if(this.nativeVerification.pending){this.mode='MANUAL_CONTROL';this.needsHumanVerification=true;this.attention={kind:'HUMAN_VERIFICATION',message:'普通浏览器验证中：请完成验证并关闭该专用窗口，随后自动接回只读监测。',at:new Date().toISOString()};} }
   async trackManualActivity(context:BrowserContext){
     await context.exposeBinding('__pitchManualActivity',()=>this.recordManualActivity());
     const install=()=>{
@@ -142,7 +146,7 @@ export class ProviderSession {
   assertAutomatic() { if (this.mode !== 'AUTOMATION') throw new Interrupted('已暂停，等待人工接管'); }
   async webAction<T>(action:()=>Promise<T>,assertControl=()=>this.assertAutomatic()):Promise<T> {
     const revision=this.modeRevision;
-    const check=()=>{assertControl();if(this.modeRevision!==revision)throw new Interrupted('已暂停，等待人工接管');};
+    const check=()=>{assertControl();if(this.modeRevision!==revision)throw new Interrupted('已暂停，等待人工接管');if(this.mode==='AUTOMATION')this.responses?.check();};
     check();
     if(this.id!=='playfootball')return action();
     // Both venues and login share this deadline, including failed/reopened pages.
@@ -151,7 +155,7 @@ export class ProviderSession {
       check();
     }
     check();
-    try{return await action();}
+    try{const result=await action();if(this.mode==='AUTOMATION')this.responses?.check();return result;}
     finally{this.nextWebActionAt=this.actionClock.now()+10000;}
   }
   async exclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -172,6 +176,7 @@ export class ProviderSession {
       }));
       try{
       context.setDefaultTimeout(12000); context.setDefaultNavigationTimeout(35000);
+      this.responses?.watch(context);
       await this.trackManualActivity(context);
       const authFile = join(this.root, 'sessions', `${this.id}.json`);
       if (existsSync(authFile)) {
@@ -277,9 +282,10 @@ export class ProviderSession {
       const page = this.id==='council'?(await councilUserPage(this)??this.manualPage):(this.manualPage??[...this.pages.values()].find(page=>!page.isClosed()));
       if (!page || page.isClosed()) return this.status;
       // Read the user-owned page without navigating, refreshing, or collecting input values.
-      const signals=await authSignals(page,this.id);
-      this.needsHumanVerification=signals.challenge;
-      const readable=!signals.challenge&&await page.locator('#booking_day_selector:visible,#time_selector:visible,.bookings-calendar:visible,.bookings-calendar-date:visible,.booking-slot:visible,[data-date]:visible,.booking-calendar:visible').count()>0;
+      const wasChallenge=this.needsHumanVerification,signals=await authSignals(page,this.id);
+      this.needsHumanVerification=signals.challenge||this.responses?.issue?.kind==='HUMAN_VERIFICATION';
+      const readable=!this.needsHumanVerification&&await page.locator('#booking_day_selector:visible,#time_selector:visible,.bookings-calendar:visible,.bookings-calendar-date:visible,.booking-slot:visible,[data-date]:visible,.booking-calendar:visible').count()>0;
+      if(wasChallenge&&readable)this.lastHumanVerifiedAt=Date.now();
       this.status = signals.password ? 'LOGIN_REQUIRED' : signals.authenticated ? 'AUTHENTICATED' : readable?'ANONYMOUS_READABLE':'UNKNOWN';
       if (this.status === 'AUTHENTICATED') this.automaticLoginAllowed=this.hasCredentials;
       if(this.status==='AUTHENTICATED'||this.status==='ANONYMOUS_READABLE')await this.saveSession();

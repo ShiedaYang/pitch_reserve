@@ -32,7 +32,11 @@ Council卡片的“场地表单默认选项”显示本机保存的场地、开�
 
 ## 当前范围和限制
 
-PlayFootball 在工具窗口反复要求人机验证、普通浏览器可以正常进入时，可在“账号与接管”点击“普通浏览器验证”。程序先保存并关闭该网站的 Playwright 浏览器，再用同一专用 profile 打开普通 Edge/Chrome/Chromium；人工验证阶段没有自动化或调试连接。手动验证并确认进入日历后，关闭这个专用窗口，工具空闲检测会自动接回只读监测；不需要点恢复。窗口打开期间不扫描、不抢占 profile，服务重启也会保留等待状态。主动暂停仍保持暂停。此通道不能保证官网接受接回后的自动化：如果再次验证，会重新停下并保留“暂无信息”，不反复刷新或自动解题。
+PlayFootball 在工具窗口反复要求人机验证、普通浏览器可以正常进入时，可在“账号与接管”点击“普通浏览器验证”。程序先保存并关闭该网站的 Playwright 浏览器，再用同一专用 profile 打开普通 Edge/Chrome/Chromium；人工验证阶段没有自动化或调试连接。手动验证并确认进入日历后，关闭这个专用窗口，工具空闲检测会自动接回只读监测；不需要点恢复。窗口打开期间不扫描、不抢占 profile，服务重启也会保留等待状态。主动暂停仍保持暂停。此通道不能保证官网接受接回后的自动化：如果再次验证，会重新停下并标注“查询失败”，不反复刷新或自动解题。
+
+PlayFootball 两个场地共用轮次间隔，从本轮完成时开始至少等待30分钟；偏好设置超过30分钟时采用更长的间隔。避免完整翻页耗时吃掉等待时间。第一方请求返回 HTTP 429 时遵守 `Retry-After`，持续限流依次等待30、60、120分钟；官网要求更久则延长。收到 `cf-mitigated: challenge` 时，即使可见页面仍是旧日历，也暂停两个场地，不按普通超时重开。人工刷新并完成验证、日历恢复后才接回。运行记录保留 HTTP 状态、响应类型、下次检查时间，以及已知时距离上次人工验证的秒数；不记录 Cookie、验证码或令牌。
+
+验证有效期由官网设置，Cloudflare 的 [Challenge Passage](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/challenge-passage/) 默认值不能代表此网站实际配置；其 [支持环境说明](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/) 也明确不支持用 Playwright 等框架解决生产验证。因此降低请求量只能减少不必要的触发，无法保证永不出现；持续循环需由网站管理员核查或提供允许的监测接口。响应识别采用官方 [验证响应头说明](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/)。
 
 浏览器 profile 中的新 Cookie 优先于旧会话快照，过期 Cookie 和旧快照中的 Cloudflare 验证 Cookie 不会重新注入；人工通过后首次读取直接复用已验证的日历。Windows 默认使用同一安装的 Edge；Linux 人工验证需要图形桌面和 DISPLAY，可用 `PITCH_BROWSER_EXECUTABLE` 显式配置浏览器路径（普通验证与自动扫描使用同一可执行文件）。不要在验证过程中反复重启浏览器。
 
