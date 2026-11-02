@@ -11,6 +11,7 @@ import type { Store } from './store.ts';
 import {councilUserPage} from './council-page.ts';
 import {CredentialVault} from './credential-vault.ts';
 import {browserOptions,manualBrowserUrl} from './runtime-config.ts';
+import {WebsiteResponseError,playFootballQuietMinutes} from './playfootball-responses.ts';
 
 export class Monitor {
   store: Store;
@@ -53,34 +54,53 @@ export class Monitor {
     const s = this.sessions.get(id)!; s.assertAutomatic();
     return s.exclusive(async () => {
       s.nextScanAt = Date.now() + this.store.policy().intervalMinutes * 60000;
-      if(s.status==='LOGIN_REQUIRED' && s.hasCredentials && s.automaticLoginAllowed) {
-        const result=await s.signInStored('AUTOMATION');
-        if(result.kind!=='AUTHENTICATED' && result.kind!=='CURRENT_SESSION')return;
-      }
-      for (const resource of resources.filter(r => r.provider === id)) {
-        if(s.mode!=='AUTOMATION')break;await this.scanResource(s, resource);
-        this.publishBlockedResources(s,resource);
+      const started=Date.now();
+      try{
+        if(s.status==='LOGIN_REQUIRED' && s.hasCredentials && s.automaticLoginAllowed) {
+          const result=await s.signInStored('AUTOMATION');
+          if(result.kind!=='AUTHENTICATED' && result.kind!=='CURRENT_SESSION')return;
+        }
+        for (const resource of resources.filter(r => r.provider === id)) {
+          if(s.mode!=='AUTOMATION')break;await this.scanResource(s, resource);
+          this.publishBlockedResources(s,resource);
+          if(s.responses?.issue?.kind==='RATE_LIMITED')break;
+        }
+        s.responses?.recovered();
+      }catch(error){
+        if(!(error instanceof WebsiteResponseError)||s.mode!=='AUTOMATION')throw error;
+        const resource=resources.find(row=>row.provider===id)!;
+        await this.scanResource(s,resource);this.publishBlockedResources(s,resource);
+      }finally{
+        if(id==='playfootball'&&s.mode==='AUTOMATION'){
+          const quietMinutes=Math.max(playFootballQuietMinutes,this.store.policy().intervalMinutes);
+          s.nextScanAt=Math.max(s.nextScanAt,s.responses?.issue?.retryAt??0,Date.now()+quietMinutes*60000);
+          this.store.event(`PlayFootball：本轮结束，至少等待 ${quietMinutes} 分钟后自动检查`,{provider:id,stage:'SCHEDULE',code:'NEXT_SCAN',details:{durationMs:Date.now()-started,nextRetryAt:new Date(s.nextScanAt).toISOString(),action:'间隔从本轮结束时计算；两个场地共用等待时间'}});
+        }
       }
     });
   }
   private publishBlockedResources(session:ProviderSession,scanned:Resource){
-    const attention=session.attention;if(session.mode!=='MANUAL_CONTROL'||!attention)return;
-    for(const resource of resources.filter(row=>row.provider===session.id&&row.id!==scanned.id))this.store.saveScan(resource,{
-      status:'PARTIAL',observations:[],coverage:targetDates(this.store.policy()).map(date=>({date,status:'ERROR',note:attention.message})),
-      summary:`${attention.message.startsWith('暂无信息')?'':'暂无信息：'}${attention.message} 同一网站的此场地尚未查询，等待人工接管。`
+    const attention=session.attention,limited=session.responses?.issue?.kind==='RATE_LIMITED';if(!limited&&(session.mode!=='MANUAL_CONTROL'||!attention))return;
+    const message=limited?'官网暂时限流，此场地尚未查询；等待结束后自动重试。':`${attention!.message} 同一网站的此场地尚未查询，等待人工接管。`;
+    const venues=resources.filter(row=>row.provider===session.id);
+    for(const resource of venues.slice(venues.findIndex(row=>row.id===scanned.id)+1))this.store.saveScan(resource,{
+      status:'PARTIAL',observations:[],coverage:targetDates(this.store.policy()).map(date=>({date,status:'ERROR',note:message})),
+      summary:message
     });
   }
   async scanResource(session: ProviderSession, resource: Resource, retriedLogin=false):Promise<void> {
     const policy = this.store.policy(); let result: ScanResult|undefined;const started=Date.now(),runId=`scan-${randomUUID()}`;let stage='OPEN_PAGE',attemptNo=1;
     this.store.event(`${resource.name}：开始只读检查`,{provider:session.id,resourceId:resource.id,stage:'SCAN_START',runId,details:{dateFrom:policy.dateFrom,dateTo:policy.dateTo,targetDays:targetDates(policy).length}});
     for(let attempt=0;attempt<2;attempt++)try {
-      attemptNo=attempt+1;stage='OPEN_PAGE';const page = await session.page(resource);
+      attemptNo=attempt+1;stage='OPEN_PAGE';session.responses?.check();const page = await session.page(resource);
+      session.responses?.check();
       const challenge=await session.challengePage();session.assertAutomatic();
       if(challenge){const message='暂无信息：官网出现人机验证，请手动接管完成验证；验证期间停止自动刷新。';await session.requireManual('HUMAN_VERIFICATION',message,challenge);this.store.incidents.report(session.id,'HUMAN_VERIFICATION',message);result={status:'PARTIAL',observations:[],coverage:targetDates(policy).map(date=>({date,status:'ERROR',note:'官网需要人机验证'})),summary:message};break;}
       stage='CALENDAR';
       if (resource.provider === 'playfootball') result = await scanPlayFootball(page, resource, policy, session);
       else if (resource.provider === 'ggcb') result = await scanGgcb(page, resource, policy, session);
       else result = await scanCouncil(page, policy, session,this.store.councilDefaults()??undefined);
+      session.responses?.check();
       if(!result)throw new Error('官网读取未返回结果');
       if(result.status==='ERROR')this.store.incidents.report(session.id,'SCAN_ERROR','官网读取返回异常，请检查运行记录和页面结构。');
       if(/超时|timeout/i.test(result.summary)&&!result.coverage.some(row=>row.status==='READ')){const timeout=new Error('官网请求超时');timeout.name='TimeoutError';throw timeout;}
@@ -97,17 +117,27 @@ export class Monitor {
     } catch (error) {
       if (error instanceof Interrupted) {this.store.event(`${resource.name}：本轮检查因人工操作中止`,{provider:session.id,resourceId:resource.id,stage,runId,code:'INTERRUPTED',details:{cancelled:true,durationMs:Date.now()-started}});return;}
       if(session.mode!=='AUTOMATION')return;
+      if(error instanceof WebsiteResponseError){
+        const human=error.kind==='HUMAN_VERIFICATION';
+        const message=human?'官网请求出现人机验证，已停止两个场地的自动请求；请手动接管刷新并完成验证。':'官网返回 HTTP 429 限流，已停止两个场地的请求；等待结束后自动重试。';
+        if(human)await session.requireManual('HUMAN_VERIFICATION',message,error.page);
+        else session.nextScanAt=Math.max(session.nextScanAt,error.retryAt!);
+        this.store.incidents.report(session.id,human?'HUMAN_VERIFICATION':'SCAN_ERROR',message);
+        this.store.event(`${resource.name}：${message}`,{level:'WARN',provider:session.id,resourceId:resource.id,stage,runId,code:error.kind,details:{status:error.httpStatus,responseType:error.responseType,...(session.lastHumanVerifiedAt?{verificationAgeSeconds:Math.round((Date.now()-session.lastHumanVerifiedAt)/1000)}:{}),reason:'官网响应头明确要求验证或限流；不按普通超时重开',action:human?'用户刷新并完成官网验证后接回监测':'遵守 Retry-After；持续限流逐次延长等待',...(human?{}:{nextRetryAt:new Date(session.nextScanAt).toISOString()})}});
+        result={status:human?'PARTIAL':'ERROR',observations:result?.observations??[],coverage:targetDates(policy).map(date=>result?.coverage.find(row=>row.date===date&&row.status==='READ')??{date,status:'ERROR',note:message}),summary:message};break;
+      }
       const challenge=await session.challengePage().catch(()=>undefined);
       if(challenge){const message='暂无信息：官网出现人机验证，请手动接管完成验证；验证期间停止自动刷新。';await session.requireManual('HUMAN_VERIFICATION',message,challenge);this.store.incidents.report(session.id,'HUMAN_VERIFICATION',message);result={status:'PARTIAL',observations:[],coverage:targetDates(policy).map(date=>({date,status:'ERROR',note:'官网需要人机验证'})),summary:message};break;}
       const timedOut=error instanceof Error&&/Timeout|timeout|超时/i.test(error.name+error.message);
-      if(timedOut&&attempt===0){this.store.event(`${resource.name}：请求超时，关闭并重新打开官网后重试一次`,{level:'WARN',provider:session.id,resourceId:resource.id,stage:'RETRY',runId,code:'TIMEOUT',details:{attempt:attemptNo,...diagnoseError(error),action:'关闭出错标签页后重试一次'}});try{await session.reopenResource(resource);continue;}catch(reopenError){if(reopenError instanceof Interrupted)return;}}
-      const issue=diagnoseError(error);this.store.event(`${resource.name}：只读检查失败`,{level:'ERROR',provider:session.id,resourceId:resource.id,stage,code:issue.code,runId,details:{...issue,attempt:attemptNo,durationMs:Date.now()-started,nextRetryAt:new Date(Date.now()+60000).toISOString()}});
+      if(timedOut&&attempt===0){this.store.event(`${resource.name}：请求超时，关闭并重新打开官网后重试一次`,{level:'WARN',provider:session.id,resourceId:resource.id,stage:'RETRY',runId,code:'TIMEOUT',details:{attempt:attemptNo,...diagnoseError(error),action:'关闭出错标签页后重试一次'}});try{await session.reopenResource(resource);continue;}catch(reopenError){if(reopenError instanceof Interrupted)return;if(reopenError instanceof WebsiteResponseError)continue;}}
+      const retryMinutes=session.id==='playfootball'?Math.max(playFootballQuietMinutes,policy.intervalMinutes):1;
+      const issue=diagnoseError(error);this.store.event(`${resource.name}：只读检查失败`,{level:'ERROR',provider:session.id,resourceId:resource.id,stage,code:issue.code,runId,details:{...issue,attempt:attemptNo,durationMs:Date.now()-started,nextRetryAt:new Date(Date.now()+retryMinutes*60000).toISOString()}});
       console.error(`${resource.id}: ${issue.code} ${issue.reason}`);
       const kind = timedOut ? '页面重新打开后仍超时，请手动接管' : issue.reason;
-      session.nextScanAt=Date.now()+60000;
+      session.nextScanAt=Date.now()+retryMinutes*60000;
       if(timedOut)await session.requireManual('TIMEOUT',kind,session.pages.get(resource.id));
       this.store.incidents.report(session.id,timedOut?'TIMEOUT':'SCAN_ERROR',kind);
-      result = { observations: [], coverage: targetDates(policy).map(date => ({ date, status: 'ERROR', note: kind })), status: 'ERROR', summary: `暂无信息：${kind}；${timedOut?'已暂停该网站自动请求，页面恢复后空闲1分钟会自动检查。':'将在1分钟后自动重试。'}失败不代表没有空位。` };break;
+      result = { observations: [], coverage: targetDates(policy).map(date => ({ date, status: 'ERROR', note: kind })), status: 'ERROR', summary: `暂无信息：${kind}；${timedOut?'已暂停该网站自动请求，页面恢复后空闲1分钟会自动检查。':`将在${retryMinutes}分钟后自动重试。`}失败不代表没有空位。` };break;
     }
     if(!result)return;
     result.observations=result.observations.map(observation=>({...observation,bookingUrl:resource.url,priceNote:observation.priceNote || (observation.price?'官网时段报价，结算前需复核':'官网报价尚未读取')}));
