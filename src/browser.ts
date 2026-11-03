@@ -30,6 +30,12 @@ export class ProviderSession {
   nextIdleCheckAt=0;
   needsHumanVerification=false;
   lastHumanVerifiedAt?:number;
+  cooldownUntil=0;
+  reportedResponse?:WebsiteResponseError;
+  readonly retainedCalendars=new WeakSet<Page>();
+  private readonly documentLoadedAt=new WeakMap<Page,number>();
+  get scanNotBefore(){return this.id==='playfootball'?Math.max(this.cooldownUntil,this.responses?.issue?.retryAt??0):0;}
+  get unreportedResponse(){const issue=this.responses?.issue;return issue&&issue!==this.reportedResponse&&(issue.kind==='HUMAN_VERIFICATION'||issue.retryAt!>Date.now())?issue:undefined;}
   nativeVerification:NativeVerification;
   responses?:PlayFootballResponses;
   private verifiedPage?:Page;
@@ -56,7 +62,7 @@ export class ProviderSession {
     try{await this.check();}catch{return false;}
     if(this.mode!=='MANUAL_CONTROL'||this.lastManualActivityAt!==activity||this.needsHumanVerification||this.attention&&this.status==='UNKNOWN'||this.status==='LOGIN_REQUIRED'&&!(this.hasCredentials&&this.automaticLoginAllowed))return false;
     if(wasChallenge&&this.id==='playfootball'&&this.manualPage){this.verifiedPage=this.manualPage;await this.saveSession();}
-    this.attention=undefined;this.mode='AUTOMATION';this.nextScanAt=0;return true;
+    this.attention=undefined;this.mode='AUTOMATION';this.nextScanAt=this.scanNotBefore;return true;
   }
   status: SessionStatus = 'UNKNOWN';
   context?: BrowserContext;
@@ -196,15 +202,21 @@ export class ProviderSession {
   }
   async page(resource: Resource): Promise<Page> {
     this.assertAutomatic();
-    if(this.verifiedPage&&!this.verifiedPage.isClosed()&&this.verifiedPage.url()===resource.url){const page=this.verifiedPage;this.verifiedPage=undefined;this.pages.set(resource.id,page);return page;}
+    if(this.verifiedPage&&!this.verifiedPage.isClosed()&&this.verifiedPage.url()===resource.url){const page=this.verifiedPage;this.verifiedPage=undefined;this.retainedCalendars.delete(page);this.documentLoadedAt.set(page,Date.now());this.pages.set(resource.id,page);return page;}
     if (resource.provider === 'council') {
       const current = await councilUserPage(this); this.assertAutomatic();
       if (current) return current;
     }
     const context = await this.getContext(); this.assertAutomatic();
     let page = this.pages.get(resource.id);
+    if(resource.provider==='playfootball'&&page&&!page.isClosed()&&page.url()===resource.url&&Date.now()-(this.documentLoadedAt.get(page)??0)<86400000){
+      if(await page.locator('.bookings-calendar-picker:visible').count()>0){this.assertAutomatic();this.responses?.check();this.retainedCalendars.add(page);return page;}
+      if((await authSignals(page,this.id)).challenge)return page;
+    }
     if (!page || page.isClosed()) { page = await context.newPage(); this.pages.set(resource.id, page); }
+    this.retainedCalendars.delete(page);
     this.assertAutomatic(); await this.webAction(()=>page!.goto(resource.url, { waitUntil: 'domcontentloaded' })); this.assertAutomatic();
+    this.documentLoadedAt.set(page,Date.now());
     return page;
   }
   async reopenResource(resource:Resource){

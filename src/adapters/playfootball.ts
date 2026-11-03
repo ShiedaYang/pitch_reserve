@@ -5,10 +5,8 @@ import type { ProviderSession } from '../browser.ts';
 
 export interface CalendarSnapshot { label: string; headers: string[]; rows: string[][]; }
 const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-export function mapCalendar(snapshot: CalendarSnapshot, resource: Resource, reference: string): Observation[] {
-  if (!snapshot.headers.length || snapshot.rows.length !== snapshot.headers.length) throw new Error('日历日期与库存行数量不一致');
-  const weekdayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const range = snapshot.label.match(/(\d{1,2})(?:st|nd|rd|th)?(?:\s+[A-Za-z]+)?\s*-\s*(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)/i);
+function calendarWeekStart(label:string,reference:string){
+  const range = label.match(/(\d{1,2})(?:st|nd|rd|th)?(?:\s+[A-Za-z]+)?\s*-\s*(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)/i);
   if (!range) throw new Error('周日期标题无法识别');
   const endMonth = monthNames.findIndex(m => m.toLowerCase() === range[3].slice(0,3).toLowerCase());
   const weekEnds: string[] = [];
@@ -17,7 +15,12 @@ export function mapCalendar(snapshot: CalendarSnapshot, resource: Resource, refe
     if (d.getUTCMonth() === endMonth && d.getUTCDate() === Number(range[2]) && d.getUTCDay() === 0 && new Date(`${addDays(date, -6)}T12:00:00Z`).getUTCDate() === Number(range[1])) weekEnds.push(date);
   }
   if (weekEnds.length !== 1) throw new Error('周日期范围存在歧义');
-  const weekStartDate = addDays(weekEnds[0], -6);
+  return addDays(weekEnds[0], -6);
+}
+export function mapCalendar(snapshot: CalendarSnapshot, resource: Resource, reference: string): Observation[] {
+  if (!snapshot.headers.length || snapshot.rows.length !== snapshot.headers.length) throw new Error('日历日期与库存行数量不一致');
+  const weekdayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const weekStartDate = calendarWeekStart(snapshot.label,reference);
   const result: Observation[] = [];
   for (let i = 0; i < snapshot.headers.length; i++) {
     const header = snapshot.headers[i].match(/(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*(\d{1,2})/);
@@ -59,29 +62,67 @@ export async function scanPlayFootball(page: Page, resource: Resource, policy: P
   if (await reject.isVisible()) { session.assertAutomatic(); await session.webAction(()=>reject.click()); }
   const reference = dateReference||londonDate();
   const wanted = targetDates(policy,reference,dateReference?new Date(`${reference}T12:00:00Z`):new Date()); const byDate = new Map<string, Observation>(); let navigation = '未尝试';let navigationFailed=false;
+  // Only an explicit statement in the current venue page establishes a release limit.
+  const limits=new Set((await page.locator('p').allTextContents()).flatMap(text=>{
+    const match=text.replace(/\s+/g,' ').match(/book a pitch in a matter of minutes,?\s+up to (\d{1,3}) days in advance/i);
+    return match&&Number(match[1])>0?[Number(match[1])]:[];
+  }));
+  const releaseDays=limits.size===1?[...limits][0]:undefined;
+  const releaseEnd=releaseDays===undefined?undefined:addDays(reference,releaseDays);
+  const active=wanted.filter(date=>!releaseEnd||date<=releaseEnd),weeks=[...new Set(active.map(weekStart))].sort(),visited=new Set<string>();
   const maxWeeks=Math.min(16,Math.max(1,Math.ceil((Date.parse(policy.dateTo)-Date.parse(reference))/604800000)+2));
+  let snapshot=await readCalendar(page);
+  const move=async(direction:1|-1)=>{
+    const icon=direction===1?'chevron-right':'chevron-left';
+    const button=page.locator('.bookings-calendar-date > button').filter({has:page.locator(`[data-icon="${icon}"]`)});
+    if(await button.count()!==1||!await button.isEnabled())return false;
+    const before=snapshot,oldWeek=calendarWeekStart(before.label,reference);
+    session.assertAutomatic();await session.webAction(()=>button.click());
+    await page.waitForFunction(old=>{
+      const label=(document.querySelector('.bookings-calendar-picker') as HTMLElement)?.innerText;
+      return !!label&&label!==old&&!!document.querySelector('.booking-slot');
+    },before.label,{timeout:15000});
+    await page.waitForFunction(old=>Array.from(document.querySelectorAll('.bookings-calendar-weekday')).map(x=>(x as HTMLElement).innerText.replace(/\s+/g,' ')).join('|')!==old,
+      before.headers.join('|'),{timeout:10000});
+    snapshot=await readCalendar(page);
+    if(calendarWeekStart(snapshot.label,reference)!==addDays(oldWeek,direction*7))throw new Error('翻周日期未按官网按钮方向更新');
+    navigation='翻周成功';return true;
+  };
+  let pageUse='读取已载入日历';
+  if(active.length&&session.retainedCalendars.delete(page)){
+    // Refresh the visible week through the normal controls before accepting its prices.
+    try{
+      pageUse='保留日历，通过周控件刷新报价';
+      const start=calendarWeekStart(snapshot.label,reference),direction:1|-1=start<=weeks[0]?1:-1;
+      let moved=await move(direction);
+      if(!moved)moved=await move(direction===1?-1:1);
+      if(moved)await move(calendarWeekStart(snapshot.label,reference)<start?1:-1);
+      else{
+        pageUse='周控件不可用，本轮整页重载一次';
+        await session.webAction(()=>page.reload({waitUntil:'domcontentloaded'}));
+        await page.locator('.booking-slot').first().waitFor({state:'attached'});snapshot=await readCalendar(page);navigation='周导航不可用，本轮只重新加载一次';
+      }
+    }catch{session.assertAutomatic();navigationFailed=true;pageUse='保留页面刷新失败';navigation='日历刷新未完成，未复用旧库存';}
+  }
+  let direction:1|-1=1;
+  if(active.length){
+    const start=calendarWeekStart(snapshot.label,reference),first=weeks[0],last=weeks.at(-1)!;
+    direction=start<=first?1:start>=last?-1:Date.parse(start)-Date.parse(first)<Date.parse(last)-Date.parse(start)?-1:1;
+  }
   for (let week = 0; week < maxWeeks; week++) {
-    session.assertAutomatic(); const snapshot = await readCalendar(page);
-    for (const item of mapCalendar(snapshot, resource, reference)) if (wanted.includes(item.date)) byDate.set(item.date, item);
-    const observedEnd = Array.from(byDate.keys()).sort().at(-1);
-    if (observedEnd && observedEnd >= wanted.at(-1)!) break;
+    if(!active.length||navigationFailed)break;
+    session.assertAutomatic();const currentWeek=calendarWeekStart(snapshot.label,reference);visited.add(currentWeek);
+    for (const item of mapCalendar(snapshot, resource, reference)) if (active.includes(item.date)) byDate.set(item.date, item);
+    if(weeks.every(value=>visited.has(value)))break;
     if(week===maxWeeks-1){navigation='已达本轮安全翻页上限，剩余日期待下轮检查';break;}
-    const next = page.locator('.bookings-calendar-date > button').filter({ has: page.locator('[data-icon="chevron-right"]') });
-    if (await next.count() !== 1 || !await next.isEnabled()) { navigation = week ? '已翻周，已到当前导航边界' : '下一周按钮不可用'; break; }
+    if(currentWeek<=weeks[0])direction=1;
+    else if(currentWeek>=weeks.at(-1)!)direction=-1;
     try {
-      session.assertAutomatic(); await session.webAction(()=>next.click());
-      await page.waitForFunction(old => {
-        const label = (document.querySelector('.bookings-calendar-picker') as HTMLElement)?.innerText;
-        return !!label && label !== old && !!document.querySelector('.booking-slot');
-      }, snapshot.label, { timeout: 15000 });
-      // The week title and the actual day rows must both change before accepting inventory.
-      await page.waitForFunction(old => Array.from(document.querySelectorAll('.bookings-calendar-weekday')).map(x => (x as HTMLElement).innerText.replace(/\s+/g, ' ')).join('|') !== old,
-        snapshot.headers.join('|'), { timeout: 10000 });
-      navigation = '翻周成功';
+      if(!await move(direction)){navigation=direction===1?'下一周按钮不可用':'上一周按钮不可用';break;}
     } catch { session.assertAutomatic();navigationFailed=true;navigation = '翻周未完成；未把原周库存套用到新日期'; break; }
   }
-  const coverage: Coverage[] = wanted.map(date => byDate.has(date) ? { date, status: 'READ', note: '已读取18:00具体时间块' } : { date, status: navigationFailed?'ERROR':'UNKNOWN', note: navigationFailed?'翻周未完成，无法读取该日期':'未扫描到该日期；尚未核实是否开放' });
-  const complete = coverage.every(x => x.status === 'READ');
-  return { observations: [...byDate.values()], coverage, status: complete ? 'OK' : 'PARTIAL', navigation,
-    summary: `已读取 ${byDate.size}/${wanted.length} 个目标日期；${navigation}。仅监测，未点击具体可订场次。` };
+  const coverage: Coverage[] = wanted.map(date => byDate.has(date) ? { date, status: 'READ', note: '已读取18:00具体时间块' } : releaseEnd&&date>releaseEnd?{date,status:'OUTSIDE_RELEASE_WINDOW',note:`本场地官网当前说明最多提前${releaseDays}天预订`}:{ date, status: navigationFailed?'ERROR':'UNKNOWN', note: navigationFailed?'翻周未完成，无法读取该日期':'未扫描到该日期；尚未核实是否开放' });
+  const complete = coverage.every(x => x.status === 'READ'||x.status==='OUTSIDE_RELEASE_WINDOW');
+  return { observations: [...byDate.values()], coverage, status: complete ? 'OK' : 'PARTIAL', navigation:`${pageUse}；${navigation}`,
+    summary: `已读取 ${byDate.size}/${wanted.length} 个目标日期；${pageUse}；${navigation}。${releaseEnd?`本场地官网明确最多提前${releaseDays}天预订，远期日期暂无信息。`:''}仅监测，未点击具体可订场次。` };
 }
