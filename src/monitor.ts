@@ -26,7 +26,8 @@ export class Monitor {
     this.store.notifications.expire(policy);
     return { today:londonDate(),policy,notifications:{...this.store.notifications.list(),summary:this.store.notifications.summary(),deliveryConfigured:false},councilDefaults:this.store.councilDefaults(), readOnly: true, providers: providerIds.map(id => {
       const s = this.sessions.get(id)!;
-      return { id, mode: s.mode, session: s.status, busy: !!s.job,restarting:s.restarting,nativeVerificationActive:s.nativeVerification.active,attention:s.attention??null,manualBrowserUrl:manualBrowserUrl(),headless:browserOptions().headless,autoResumeAt:s.mode==='MANUAL_CONTROL'&&!s.nativeVerification.active?new Date(Math.max(s.lastManualActivityAt+60000,s.nextIdleCheckAt)).toISOString():null, nextScanAt: s.nextScanAt ? new Date(s.nextScanAt).toISOString() : null, browserOpen: !!s.context||s.nativeVerification.active,hasCredentials:s.hasCredentials,hasSavedCredentials:s.hasSavedCredentials,savedUsername:s.savedUsername??null,credentialError:s.credentialError,automaticLoginAllowed:s.automaticLoginAllowed,loginResult:s.loginResult };
+      const nextScanAt=Math.max(s.nextScanAt,s.scanNotBefore);
+      return { id, mode: s.mode, session: s.status, busy: !!s.job,restarting:s.restarting,nativeVerificationActive:s.nativeVerification.active,attention:s.attention??null,manualBrowserUrl:manualBrowserUrl(),headless:browserOptions().headless,autoResumeAt:s.mode==='MANUAL_CONTROL'&&!s.nativeVerification.active?new Date(Math.max(s.lastManualActivityAt+60000,s.nextIdleCheckAt)).toISOString():null, nextScanAt: nextScanAt ? new Date(nextScanAt).toISOString() : null, browserOpen: !!s.context||s.nativeVerification.active,hasCredentials:s.hasCredentials,hasSavedCredentials:s.hasSavedCredentials,savedUsername:s.savedUsername??null,credentialError:s.credentialError,automaticLoginAllowed:s.automaticLoginAllowed,loginResult:s.loginResult };
     }),incidents:this.store.incidents.list(), resources: resources.map(resource => ({ ...resource, latest: this.store.latest(resource.id) })), events: this.store.events() };
   }
   start() {
@@ -38,7 +39,7 @@ export class Monitor {
     const policy = this.store.policy();
     const window = `${policy.dateFrom}/${policy.dateTo}/${policy.lookahead ?? ''}`;
     if (this.lastWindow && this.lastWindow !== window) {
-      for (const s of this.sessions.values()) if (s.mode === 'AUTOMATION') s.nextScanAt = 0;
+      for (const s of this.sessions.values()) if (s.mode === 'AUTOMATION') s.nextScanAt = s.scanNotBefore;
       this.store.event(`监测范围已更新：${policy.dateFrom} 至 ${policy.dateTo}`);
     }
     this.lastWindow = window;
@@ -47,11 +48,12 @@ export class Monitor {
       const s = this.sessions.get(id)!;
       if(await s.resumeAfterInactivity())this.store.event(`${id}：用户1分钟无操作，已自动恢复只读监测`,{provider:id,stage:'RECOVERY',code:'IDLE_RESUMED'});
       if(this.stopping)return;
-      return s.mode === 'AUTOMATION' && !s.job && Date.now() >= s.nextScanAt ? this.scan(id) : Promise.resolve();
+      return s.mode === 'AUTOMATION' && !s.job && (s.unreportedResponse||Date.now() >= Math.max(s.nextScanAt,s.scanNotBefore)) ? this.scan(id) : Promise.resolve();
     }));
   }
   async scan(id: ProviderId) {
     const s = this.sessions.get(id)!; s.assertAutomatic();
+    if(Date.now()<s.scanNotBefore&&!s.unreportedResponse){s.nextScanAt=Math.max(s.nextScanAt,s.scanNotBefore);return;}
     return s.exclusive(async () => {
       s.nextScanAt = Date.now() + this.store.policy().intervalMinutes * 60000;
       const started=Date.now();
@@ -73,7 +75,8 @@ export class Monitor {
       }finally{
         if(id==='playfootball'&&s.mode==='AUTOMATION'){
           const quietMinutes=Math.max(playFootballQuietMinutes,this.store.policy().intervalMinutes);
-          s.nextScanAt=Math.max(s.nextScanAt,s.responses?.issue?.retryAt??0,Date.now()+quietMinutes*60000);
+          s.cooldownUntil=Date.now()+quietMinutes*60000;
+          s.nextScanAt=Math.max(s.nextScanAt,s.scanNotBefore);
           this.store.event(`PlayFootball：本轮结束，至少等待 ${quietMinutes} 分钟后自动检查`,{provider:id,stage:'SCHEDULE',code:'NEXT_SCAN',details:{durationMs:Date.now()-started,nextRetryAt:new Date(s.nextScanAt).toISOString(),action:'间隔从本轮结束时计算；两个场地共用等待时间'}});
         }
       }
@@ -118,6 +121,7 @@ export class Monitor {
       if (error instanceof Interrupted) {this.store.event(`${resource.name}：本轮检查因人工操作中止`,{provider:session.id,resourceId:resource.id,stage,runId,code:'INTERRUPTED',details:{cancelled:true,durationMs:Date.now()-started}});return;}
       if(session.mode!=='AUTOMATION')return;
       if(error instanceof WebsiteResponseError){
+        session.reportedResponse=error;
         const human=error.kind==='HUMAN_VERIFICATION';
         const message=human?'官网请求出现人机验证，已停止两个场地的自动请求；请手动接管刷新并完成验证。':'官网返回 HTTP 429 限流，已停止两个场地的请求；等待结束后自动重试。';
         if(human)await session.requireManual('HUMAN_VERIFICATION',message,error.page);
@@ -196,8 +200,11 @@ export class Monitor {
       await s.check();
       if(s.needsHumanVerification)throw new Error('官网仍需人机验证，请手动完成后等待自动检测');
       if (s.status === 'LOGIN_REQUIRED') throw new Error('页面仍显示登录表单，请先在官网完成登录');
-      s.mode = 'AUTOMATION'; s.nextScanAt = 0; void this.scan(id).catch(() => {}); this.store.event(`${id}：恢复只读监测`,{provider:id,stage:'RECOVERY',code:'RESUMED'});
-    } else if (action === 'scan') { void this.scan(id).catch(() => {}); }
+      s.mode = 'AUTOMATION'; s.nextScanAt = s.scanNotBefore; void this.scan(id).catch(() => {}); this.store.event(`${id}：恢复只读监测`,{provider:id,stage:'RECOVERY',code:'RESUMED'});
+    } else if (action === 'scan') {
+      if(Date.now()<s.scanNotBefore)return {message:'PlayFootball 正在等待下次检查；立即检查也会遵守官网限流和网站等待间隔。'};
+      void this.scan(id).catch(() => {});
+    }
     else throw new Error('不支持的操作');
   }
   async close() { this.stopping = true; clearInterval(this.timer); for (const s of this.sessions.values()) s.mode = 'PAUSED'; await Promise.allSettled([...this.sessions.values()].map(async s => { await s.opening?.catch(() => {}); await s.close(); await s.job?.catch(() => {}); })); }

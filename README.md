@@ -36,7 +36,11 @@ PlayFootball 在工具窗口反复要求人机验证、普通浏览器可以正�
 
 PlayFootball 两个场地共用轮次间隔，从本轮完成时开始至少等待30分钟；偏好设置超过30分钟时采用更长的间隔。避免完整翻页耗时吃掉等待时间。第一方请求返回 HTTP 429 时遵守 `Retry-After`，持续限流依次等待30、60、120分钟；官网要求更久则延长。收到 `cf-mitigated: challenge` 时，即使可见页面仍是旧日历，也暂停两个场地，不按普通超时重开。人工刷新并完成验证、日历恢复后才接回。运行记录保留 HTTP 状态、响应类型、下次检查时间，以及已知时距离上次人工验证的秒数；不记录 Cookie、验证码或令牌。
 
-验证有效期由官网设置，Cloudflare 的 [Challenge Passage](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/challenge-passage/) 默认值不能代表此网站实际配置；其 [支持环境说明](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/) 也明确不支持用 Playwright 等框架解决生产验证。因此降低请求量只能减少不必要的触发，无法保证永不出现；持续循环需由网站管理员核查或提供允许的监测接口。响应识别采用官方 [验证响应头说明](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/)。
+等待截止时间独立保留，跨午夜、修改查询范围、恢复或点击“立即检查”都不能提前启动下一轮 PlayFootball 扫描。并发调度合并为同一轮；等待期间新出现的后台限流或验证会及时上报，同一持续事件不会反复刷通知。
+
+后续扫描优先保留同场地的日历页面，通过官网上一周/下一周按钮刷新当前周，再双向读取目标范围；不会把上轮价格直接当作本轮新报价。页面外壳最多保留24小时，周控件不可用时每轮最多整页重载一次，正常导航仍遵守10秒间隔。仅当当前场地页面明确说明“最多提前多少天预订”时，才停止翻阅更远日期并标为灰色“暂无信息”；页面没有明确说明时继续核实，不把未知推断为未放号。
+
+验证有效期由官网设置，Cloudflare 的 [Challenge Passage](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/challenge-passage/) 默认值不能代表此网站实际配置；其 [支持环境说明](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/) 也明确不支持用 Playwright 等框架解决生产验证。因此降低请求量只能减少不必要的触发，无法保证永不出现；持续循环需由网站管理员核查或提供允许的监测接口。响应识别采用官方 [验证响应头说明](https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/)。模拟压力测试可用 `PITCH_STRESS_ROUNDS` 设置2–100轮浏览器日历遍历（默认3轮），运行 `node --test tests/playfootball-stress.test.ts`；全部页面和接口均由本地夹具提供，不对官网施压，结果不能证明真实 Cloudflare 已不再触发。
 
 浏览器 profile 中的新 Cookie 优先于旧会话快照，过期 Cookie 和旧快照中的 Cloudflare 验证 Cookie 不会重新注入；人工通过后首次读取直接复用已验证的日历。Windows 默认使用同一安装的 Edge；Linux 人工验证需要图形桌面和 DISPLAY，可用 `PITCH_BROWSER_EXECUTABLE` 显式配置浏览器路径（普通验证与自动扫描使用同一可执行文件）。不要在验证过程中反复重启浏览器。
 

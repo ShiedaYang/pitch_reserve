@@ -22,7 +22,10 @@ export class PlayFootballResponses {
         const host=new URL(response.url()).hostname;
         if(host!=='playfootball.net'&&!host.endsWith('.playfootball.net'))return;
         const request=response.request(),page=request.frame().page(),headers=response.headers(),status=response.status();
-        if(headers['cf-mitigated']==='challenge')this.issue=new WebsiteResponseError('HUMAN_VERIFICATION',page,status,undefined,request.resourceType());
+        if(headers['cf-mitigated']==='challenge'){
+          if(this.issue?.kind!=='HUMAN_VERIFICATION')this.issue=new WebsiteResponseError('HUMAN_VERIFICATION',page,status,undefined,request.resourceType());
+          else if(this.issue.page.isClosed())this.issue.page=page;
+        }
         else if(status===429&&this.issue?.kind!=='HUMAN_VERIFICATION'){
           const now=Date.now();
           if(this.issue?.kind!=='RATE_LIMITED'||now>=this.issue.retryAt!)this.rateLimits++;
@@ -30,7 +33,8 @@ export class PlayFootballResponses {
           const raw=headers['retry-after']??'';
           const requested=/^\d+$/.test(raw)?now+Number(raw)*1000:Date.parse(raw);
           const retryAt=Math.max(quiet,this.issue?.retryAt??0,Number.isFinite(requested)&&requested<8.64e15?requested:0);
-          this.issue=new WebsiteResponseError('RATE_LIMITED',page,status,retryAt,request.resourceType());
+          if(this.issue?.kind==='RATE_LIMITED')this.issue.retryAt=retryAt;
+          else this.issue=new WebsiteResponseError('RATE_LIMITED',page,status,retryAt,request.resourceType());
         }else if(status>=200&&status<300&&request.isNavigationRequest()&&request.frame()===page.mainFrame()
           &&this.issue?.kind==='HUMAN_VERIFICATION'&&(this.issue.page===page||this.issue.page.isClosed())){
           this.issue=undefined;
