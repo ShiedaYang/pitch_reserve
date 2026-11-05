@@ -18,6 +18,8 @@ test('console E2E: real HTTP/SQLite, calendar links, saved preferences, encrypte
  const env={...process.env,PITCH_DATA_DIR:root,PORT:String(port),PITCH_HOST:'127.0.0.1',PITCH_PUBLIC_ORIGIN:base,PITCH_LAN_CIDRS:'',PITCH_START_PAUSED:'1',PITCH_DESKTOP_UPSTREAM:'',PITCH_MANUAL_BROWSER_URL:''};
  const store=new Store(join(root,'monitor.sqlite'));const date=targetDates(initialPolicy())[0]!;
  for(const resource of resources)store.saveScan(resource,{status:'PARTIAL',summary:'E2E fixture',coverage:[{date,status:'READ',note:'fixture'}],observations:[{resourceId:resource.id,date,start:'18:00',duration:60,price:'£90.00',availability:'AVAILABLE',note:'fixture'}]});
+ store.event('GGCB coverage fixture',{provider:'ggcb',stage:'SCAN_COMPLETE',code:'OK',details:{readDays:13,targetDays:35,unreleasedDays:22,unknownDays:0,errorDays:0}});
+ store.event('GGCB month failure fixture',{provider:'ggcb',level:'ERROR',stage:'MONTH_LOAD',code:'MONTH_HTTP_ERROR',details:{status:503,dateFrom:date,reason:'月份后台请求返回 HTTP 503',remedy:'fixture'}});
  store.close();
  let child:ReturnType<typeof spawn>|undefined;let output='';
  const start=async()=>{
@@ -40,6 +42,10 @@ test('console E2E: real HTTP/SQLite, calendar links, saved preferences, encrypte
   await page.goto(base);await page.locator('.slot-link').first().waitFor();
   assert.equal(await page.locator('.slot-link').count(),4);assert.equal(await page.locator('.slot-price').first().innerText(),'£90.00');
   const link=page.locator('.slot-link').first();const href=await link.getAttribute('href');const opened=page.context().waitForEvent('page');await link.click();const official=await opened;await official.waitForLoadState();assert.equal(official.url(),href);await official.close();
+  await page.getByRole('tab',{name:'运行记录',exact:true}).click();
+  const coverage=page.locator('#events > li').filter({hasText:'GGCB coverage fixture'}),failure=page.locator('#events > li').filter({hasText:'GGCB month failure fixture'});
+  await coverage.waitFor();assert.match(await coverage.innerText(),/未放号 22.*暂未核实 0.*查询失败 0/);
+  assert.match(await failure.innerText(),/月份加载/);await failure.locator('summary').click();assert.match(await failure.innerText(),/响应状态\s*503/);assert.ok(!(await failure.innerText()).includes('undefined'));
   await page.getByRole('tab',{name:'监测偏好'}).click();await page.locator('#lookahead').selectOption('14d');await page.locator('#interval').selectOption('30');await page.locator('#policy-save').click();
   await page.waitForFunction(()=>document.querySelector('#message')?.textContent?.includes('已保存'));
   const state=await (await fetch(base+'/api/state')).json();assert.equal(state.policy.lookahead,'14d');assert.equal(state.policy.intervalMinutes,30);assert.equal(state.policy.autoHold,false);assert.ok(state.policy.dateFrom>state.today);

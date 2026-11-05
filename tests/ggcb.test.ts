@@ -5,6 +5,8 @@ import {scanGgcb} from '../src/adapters/ggcb.ts';
 import {ggcbReleaseDate} from '../src/adapters/ggcb-calendar.ts';
 import {ProviderSession} from '../src/browser.ts';
 import {initialPolicy,resources} from '../src/domain.ts';
+import {Store} from '../src/store.ts';
+import {Monitor} from '../src/monitor.ts';
 
 test('GGCB release dates use the London calendar across month/year boundaries',()=>{
   assert.equal(ggcbReleaseDate('2026-11-02'),'2026-10-25');
@@ -30,7 +32,7 @@ test('GGCB recovers a failed month request, correlates day responses and quotes 
     const context=await browser.newContext();let monthRequests=0;let quotes=0;const actions:string[]=[];
     await context.route('**/*',async route=>{
       const request=route.request();const url=new URL(request.url());
-      if(url.searchParams.get('wc-ajax')==='wc_bookings_find_booked_day_blocks'){monthRequests++;return monthRequests===1?route.abort('failed'):route.fulfill({json:{}});}
+      if(url.searchParams.get('wc-ajax')==='wc_bookings_find_booked_day_blocks'){monthRequests++;if(monthRequests===1)return route.abort('failed');await new Promise(resolve=>setTimeout(resolve,600));return route.fulfill({json:{}});}
       if(request.method()==='POST') {
         const data=new URLSearchParams(request.postData()||'');const action=data.get('action')||'';actions.push(action);
         const form=new URLSearchParams(data.get('form')||'');
@@ -54,6 +56,7 @@ test('GGCB recovers a failed month request, correlates day responses and quotes 
     await page.goto(resources[0].url);
     const failed=await scanGgcb(page,resources[0],{...initialPolicy(),dateFrom:'2026-11-02',dateTo:'2026-11-03'},session,{today:'2026-10-27',calendarTimeout:200,responseTimeout:500});
     assert.equal(failed.status,'ERROR');assert.ok(failed.coverage.every(day=>day.status==='ERROR'));
+    assert.match(failed.navigation!,/TIMEOUT|NETWORK_CONNECTION/,'month failures must retain an actionable cause');
   }finally{await browser.close();}
 });
 
@@ -64,6 +67,60 @@ test('GGCB does not navigate or query slots in months the official page has not 
     await page.route('**/*',route=>{if(route.request().method()==='POST'||new URL(route.request().url()).searchParams.has('wc-ajax'))queries++;return route.fulfill({contentType:'text/html',body:fixture(true)});});
     await page.goto(resources[0].url);
     const result=await scanGgcb(page,resources[0],{...initialPolicy(),dateFrom:'2026-11-02',dateTo:'2026-12-16'},new ProviderSession('ggcb','.local/test-unused'),{today:'2026-10-16',calendarTimeout:400});
-    assert.equal(queries,0);assert.ok(result.coverage.every(day=>day.status==='OUTSIDE_RELEASE_WINDOW'));assert.match(result.coverage[0].note,/2026-10-25/);
+    assert.equal(queries,0);assert.ok(result.coverage.every(day=>day.status==='OUTSIDE_RELEASE_WINDOW'));assert.match(result.coverage[0].note,/2026-10-25/);assert.equal(result.status,'OK');
+  }finally{await browser.close();}
+});
+
+test('GGCB reports the November log scenario as a complete check with separate unreleased counts',async t=>{
+  t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-05T13:20:00Z')});
+  const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true});
+  const store=new Store(':memory:'),monitor=new Monitor(store,'.local/test-unused'),session=monitor.sessions.get('ggcb')!;
+  try{
+    store.savePolicy({...initialPolicy(),lookahead:null,dateFrom:'2026-11-06',dateTo:'2027-01-06'});
+    const page=await browser.newPage();
+    const html=fixture(true).replace('let month=9;','let month=10;').replace('(month===9?[19,20]:[2,3])','Array.from({length:30},(_,i)=>i+1)');
+    await page.route('**/*',route=>route.request().method()==='POST'?route.fulfill({contentType:'text/html',body:'<li>No blocks available.</li>'}):route.fulfill({contentType:'text/html',body:html}));
+    await page.goto(resources[0].url);session.page=async()=>page;
+    await monitor.scanResource(session,resources[0]);
+    const event=store.eventPage({provider:'ggcb'}).items.find(row=>row.stage==='SCAN_COMPLETE')!;
+    assert.deepEqual({level:event.level,status:event.details.status,read:event.details.readDays,unreleased:event.details.unreleasedDays,unknown:event.details.unknownDays,errors:event.details.errorDays},
+      {level:'INFO',status:'OK',read:13,unreleased:22,unknown:0,errors:0});
+    assert.equal(await page.evaluate(()=>{const w=window as unknown as {orders:number;selected:number};return w.orders+w.selected;}),0);
+  }finally{store.close();await browser.close();}
+});
+
+test('GGCB rejects a failed month response even when the visible calendar looks normal',async()=>{
+  const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true});
+  try{
+    const page=await browser.newPage();let monthRequests=0,dayRequests=0;
+    await page.route('**/*',route=>{
+      if(new URL(route.request().url()).searchParams.has('wc-ajax')){monthRequests++;return route.fulfill({status:503,json:{}});}
+      if(route.request().method()==='POST'){dayRequests++;return route.fulfill({contentType:'text/html',body:'<li>No blocks available.</li>'});}
+      return route.fulfill({contentType:'text/html',body:fixture(false)});
+    });
+    await page.goto(resources[0].url);
+    const diagnostics:import('../src/activity-log.ts').EventContext[]=[];
+    const result=await scanGgcb(page,resources[0],{...initialPolicy(),dateFrom:'2026-11-02',dateTo:'2026-11-03'},new ProviderSession('ggcb','.local/test-unused'),{today:'2026-10-27',calendarTimeout:400,responseTimeout:1000,onIssue:(_message,context)=>diagnostics.push(context)});
+    assert.equal(result.status,'ERROR');assert.equal(monthRequests,2);assert.equal(dayRequests,0);
+    assert.match(result.navigation!,/HTTP 503/);assert.ok(result.coverage.every(day=>day.status==='ERROR'));
+    assert.deepEqual(diagnostics.map(row=>({stage:row.stage,code:row.code,status:row.details?.status,attempt:row.details?.attempt})),[
+      {stage:'MONTH_LOAD',code:'MONTH_HTTP_ERROR',status:503,attempt:1},{stage:'MONTH_LOAD',code:'MONTH_HTTP_ERROR',status:503,attempt:2}
+    ]);
+    assert.equal(await page.locator('.ui-datepicker-title').innerText(),'NOVEMBER 2026');
+    assert.equal(await page.locator('.wc-bookings-date-picker .blockOverlay').isVisible(),false);
+  }finally{await browser.close();}
+});
+
+test('GGCB identifies a stuck month overlay separately from an HTTP failure and cleans up listeners',async t=>{
+  const browser=await chromium.launch({channel:process.env.PITCH_BROWSER_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true,chromiumSandbox:true});
+  try{
+    const page=await browser.newPage();
+    await page.route('**/*',route=>new URL(route.request().url()).searchParams.has('wc-ajax')?route.fulfill({json:{}}):route.fulfill({contentType:'text/html',body:fixture(false).replace("overlay.style.display='none';}catch{}","}catch{}")}));
+    await page.goto(resources[0].url);
+    const cleanup=t.mock.method(page,'off');
+    const result=await scanGgcb(page,resources[0],{...initialPolicy(),dateFrom:'2026-11-02',dateTo:'2026-11-03'},new ProviderSession('ggcb','.local/test-unused'),{today:'2026-10-27',calendarTimeout:150});
+    assert.equal(result.status,'ERROR');assert.match(result.navigation!,/TIMEOUT.*遮罩未消失.*HTTP 200/);
+    assert.match(result.summary,/2个日期查询失败/);
+    assert.deepEqual(cleanup.mock.calls.map(call=>String(call.arguments[0])).filter(name=>name==='response'||name==='requestfailed').sort(),['requestfailed','requestfailed','response','response']);
   }finally{await browser.close();}
 });

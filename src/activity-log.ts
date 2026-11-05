@@ -17,7 +17,7 @@ export function safeLogText(value:unknown){return String(value??'')
  .replace(/\b(?:ou_|oc_|cli_|ghp_)[A-Za-z0-9_]+\b/g,'[账号标识已隐藏]')
  .replace(/[A-Z]:\\[^\s]+|\/(?:home|root|tmp|var|srv)\/[^\s]+/gi,'[本地路径已隐藏]')
  .replace(/<[^>]*>/g,'').replace(/[\u0000-\u0008\u000b-\u001f]/g,'').slice(0,1800);}
-const detailKeys=new Set(['reason','remedy','action','dateFrom','dateTo','targetDays','readDays','unknownDays','observations','available','priced','attempt','durationMs','nextRetryAt','status','responseType','verificationAgeSeconds','navigation','headless','displayAvailable','remoteDesktopConfigured','sent','failed','cancelled','errorType','location']);
+const detailKeys=new Set(['reason','remedy','action','dateFrom','dateTo','targetDays','readDays','unreleasedDays','unknownDays','errorDays','observations','available','priced','attempt','durationMs','nextRetryAt','status','responseType','verificationAgeSeconds','navigation','headless','displayAvailable','remoteDesktopConfigured','sent','failed','cancelled','errorType','location']);
 function safeDetails(input:Record<string,unknown>={}){const out:Record<string,string|number|boolean>={};for(const [key,value] of Object.entries(input)){if(!detailKeys.has(key))continue;if(typeof value==='string')out[key]=safeLogText(value);else if(typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value))out[key]=value;}return out;}
 export function diagnoseError(error:unknown){
  const value=error instanceof Error?error.name+' '+error.message:String(error);

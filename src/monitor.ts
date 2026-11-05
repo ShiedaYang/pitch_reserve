@@ -101,7 +101,7 @@ export class Monitor {
       if(challenge){const message='暂无信息：官网出现人机验证，请手动接管完成验证；验证期间停止自动刷新。';await session.requireManual('HUMAN_VERIFICATION',message,challenge);this.store.incidents.report(session.id,'HUMAN_VERIFICATION',message);result={status:'PARTIAL',observations:[],coverage:targetDates(policy).map(date=>({date,status:'ERROR',note:'官网需要人机验证'})),summary:message};break;}
       stage='CALENDAR';
       if (resource.provider === 'playfootball') result = await scanPlayFootball(page, resource, policy, session);
-      else if (resource.provider === 'ggcb') result = await scanGgcb(page, resource, policy, session);
+      else if (resource.provider === 'ggcb') result = await scanGgcb(page, resource, policy, session,{onIssue:(message,context)=>this.store.event(message,{...context,provider:session.id,resourceId:resource.id,runId})});
       else result = await scanCouncil(page, policy, session,this.store.councilDefaults()??undefined);
       session.responses?.check();
       if(!result)throw new Error('官网读取未返回结果');
@@ -146,7 +146,8 @@ export class Monitor {
     if(!result)return;
     result.observations=result.observations.map(observation=>({...observation,bookingUrl:resource.url,priceNote:observation.priceNote || (observation.price?'官网时段报价，结算前需复核':'官网报价尚未读取')}));
     this.store.saveScan(resource, result);const readDays=result.coverage.filter(row=>row.status==='READ').length;
-    this.store.event(`${resource.name}：${result.summary}`,{level:result.status==='ERROR'?'ERROR':result.status==='OK'?'INFO':'WARN',provider:session.id,resourceId:resource.id,stage:'SCAN_COMPLETE',code:session.needsHumanVerification?'HUMAN_VERIFICATION':result.status==='LOGIN_REQUIRED'?'LOGIN_REQUIRED':result.status==='PARTIAL'?'PARTIAL_COVERAGE':result.status,runId,details:{status:result.status,readDays,targetDays:result.coverage.length,unknownDays:result.coverage.length-readDays,observations:result.observations.length,priced:result.observations.filter(row=>!!row.price).length,available:result.observations.filter(row=>row.availability==='AVAILABLE').length,navigation:result.navigation||'未记录',durationMs:Date.now()-started,...(session.needsHumanVerification?{reason:'官网要求人机验证，已停止自动请求',remedy:browserOptions().headless?'使用 sh start-desktop.sh 切换到有界面远程浏览器后完成验证':'在工具浏览器手动验证；持续循环时使用普通浏览器验证'}:{})}});
+    const unreleasedDays=result.coverage.filter(row=>row.status==='OUTSIDE_RELEASE_WINDOW').length,unknownDays=result.coverage.filter(row=>row.status==='UNKNOWN').length,errorDays=result.coverage.filter(row=>row.status==='ERROR').length;
+    this.store.event(`${resource.name}：${result.summary}`,{level:result.status==='ERROR'?'ERROR':result.status==='OK'?'INFO':'WARN',provider:session.id,resourceId:resource.id,stage:'SCAN_COMPLETE',code:session.needsHumanVerification?'HUMAN_VERIFICATION':result.status==='LOGIN_REQUIRED'?'LOGIN_REQUIRED':result.status==='PARTIAL'?'PARTIAL_COVERAGE':result.status,runId,details:{status:result.status,readDays,targetDays:result.coverage.length,unreleasedDays,unknownDays,errorDays,observations:result.observations.length,priced:result.observations.filter(row=>!!row.price).length,available:result.observations.filter(row=>row.availability==='AVAILABLE').length,navigation:result.navigation||'未记录',durationMs:Date.now()-started,...(session.needsHumanVerification?{reason:'官网要求人机验证，已停止自动请求',remedy:browserOptions().headless?'使用 sh start-desktop.sh 切换到有界面远程浏览器后完成验证':'在工具浏览器手动验证；持续循环时使用普通浏览器验证'}:{})}});
   }
   async automaticLogin(id:ProviderId,input:unknown,retry=false) {
     const session=this.sessions.get(id)!;if(session.nativeVerification.active)throw new Error('请先关闭普通浏览器验证窗口，再操作此网站。');if(session.restarting)throw new Error('该网站浏览器正在重启，请稍后再试');const result=await (retry?session.retrySignIn():session.signIn(input));
