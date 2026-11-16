@@ -27,8 +27,10 @@ export class FeishuIntegration {
   async restore(){try{this.#settings=await this.repository.load();if(this.#settings)this.#client=this.clientFactory(this.#settings);}catch{this.#error='飞书配置无法恢复，请重新保存配置';}}
   private knownRecipientError(){
     for(const recipient of this.#settings?.recipients.filter(row=>row.enabled)??[]){
-      const failures=this.store.db.prepare("SELECT last_error FROM feishu_deliveries WHERE target_key=? AND status<>'SENT'").all(recipientKey(this.#settings!,recipient)) as Array<{last_error:string|null}>;
-      if(failures.some(row=>crossAppFailure(row.last_error)))return feishuFailureMessage(400,99992361);
+      const failures = this.store.db.prepare("SELECT last_error FROM feishu_deliveries WHERE target_key=? AND status<>'SENT' AND last_error IS NOT NULL");
+      for (const row of failures.iterate(recipientKey(this.#settings!,recipient))) {
+        if (crossAppFailure(row.last_error)) return feishuFailureMessage(400,99992361);
+      }
     }return null;
   }
   private historicalWarning(){return this.knownRecipientError()?'历史发送记录曾返回 99992361（Open ID 与应用不匹配）；这是历史结果，本次未重新验证收件人能否接收消息。':null;}

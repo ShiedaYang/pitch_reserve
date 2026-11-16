@@ -44,3 +44,22 @@ test('midnight rolling schedules automatic providers immediately and preserves e
     assert.equal(monitor.sessions.get('council')!.mode,'PAUSED');await monitor.tick();assert.deepEqual(calls,['ggcb']);
   }finally{await monitor.close();store.close();}
 });
+
+test('repeated console polls reuse London date formatters', t => {
+  t.mock.timers.enable({apis:['Date'], now:new Date('2026-10-20T22:59:00Z')});
+  const store = new Store(':memory:');
+  const monitor = new Monitor(store, '.local/test-unused');
+  const formatters = t.mock.method(Intl, 'DateTimeFormat');
+  try {
+    for (let i = 0; i < 30; i++) {
+      const state = monitor.state();
+      assert.equal(state.today, '2026-10-20');
+      assert.equal(state.policy.dateFrom, '2026-10-21');
+    }
+    t.mock.timers.tick(120000);
+    assert.equal(monitor.state().today, '2026-10-21');
+    assert.equal(formatters.mock.callCount(), 0);
+  } finally {
+    store.close();
+  }
+});
