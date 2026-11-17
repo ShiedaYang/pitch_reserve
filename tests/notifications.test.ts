@@ -47,7 +47,8 @@ test('scan and outbox persistence are atomic when notification insertion fails',
     assert.equal(store.notifications.list().items.length,1);
   }finally{store.close();}
 });
-test('outbox and dedupe survive process-style restart and scan-history pruning',()=>{
+test('outbox and dedupe survive process-style restart and scan-history pruning',t=>{
+  t.mock.timers.enable({apis:['Date'],now});
   const dir=mkdtempSync(join(tmpdir(),'pitch-notification-'));const path=join(dir,'test.sqlite');let store=new Store(path);
   try{
     store.savePolicy(policy);store.saveScan(resources[3],scan(),now);const id=store.notifications.list().items[0].id;store.close();

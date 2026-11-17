@@ -30,18 +30,25 @@ export function normalizeScanResult(result: ScanResult): ScanResult {
 }
 export type SessionStatus = 'UNKNOWN' | 'ANONYMOUS_READABLE' | 'AUTHENTICATED' | 'LOGIN_REQUIRED';
 export type Mode = 'AUTOMATION' | 'MANUAL_CONTROL' | 'PAUSED';
+const londonDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit'
+});
+const londonTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false
+});
 export function londonDate(now = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  return londonDateFormatter.format(now);
 }
 export function addDays(date: string, count: number): string {
   const d = new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + count); return d.toISOString().slice(0, 10);
 }
 export function targetDates(policy: Policy, today = londonDate(), now = new Date()): string[] {
   const result: string[] = [];
-  const time = new Intl.DateTimeFormat('en-GB', { timeZone:'Europe/London',hour:'2-digit',minute:'2-digit',hour12:false }).format(now);
+  const localDate = londonDate(now);
+  const afterLastSlot = londonTimeFormatter.format(now) >= '18:00';
   for (let day = policy.dateFrom > today ? policy.dateFrom : today; day <= policy.dateTo; day = addDays(day, 1)) {
     const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
-    if (weekday >= 1 && weekday <= 4 && !(day === londonDate(now) && time >= '18:00')) result.push(day);
+    if (weekday >= 1 && weekday <= 4 && !(day === localDate && afterLastSlot)) result.push(day);
   }
   return result;
 }

@@ -47,7 +47,7 @@ export async function scanGgcb(page:Page,resource:Resource,policy:Policy,session
         if(!loaded)throw new GgcbCalendarError('TIMEOUT','对应日期的时段响应超时','检查官网时段接口和网络；不复用上个日期的库存');
         if(!loaded.ok())throw new GgcbCalendarError('DAY_HTTP_ERROR',`日期时段请求返回 HTTP ${loaded.status()}`,'检查官网时段接口和网络；不把请求失败当作没有空位',loaded.status());
         await loaded.finished();stage='时段加载遮罩';
-        await page.waitForFunction(()=>!Array.from(document.querySelectorAll('#wc-bookings-booking-form .block-picker')).some(el=>Array.from(el.closest('div')?.querySelectorAll('.blockOverlay')||[]).some(overlay=>overlay.getBoundingClientRect().height>0 && getComputedStyle(overlay).display!=='none')),undefined,{timeout:options.calendarTimeout||15000});
+        await page.waitForFunction(()=>!Array.from(document.querySelectorAll('#wc-bookings-booking-form .block-picker')).some(el=>Array.from(el.closest('div')?.querySelectorAll('.blockOverlay')||[]).some(overlay=>overlay.getBoundingClientRect().height>0 && getComputedStyle(overlay).display!=='none')),undefined,{timeout:options.calendarTimeout||15000}).then(handle => handle.dispose());
         session.assertAutomatic();
         const times=await form.locator('.block-picker a').evaluateAll(elements=>elements.map(el=>({text:(el as HTMLElement).innerText.trim(),value:el.getAttribute('data-value')})));
         const target=times.filter(slot=>/^18:00(?:\s|$)/.test(slot.text));

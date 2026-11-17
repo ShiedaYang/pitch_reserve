@@ -45,7 +45,7 @@ export async function scanCouncilCalendar(form:Frame,policy:Policy,session:Provi
     await form.waitForFunction(()=>{
       const days=Array.from(document.querySelectorAll('#booking_day_selector .carousel-item.active #week-cal .bds-day'));
       return days.length>0&&days.every(day=>(day.querySelector('.day')?.textContent||'').trim()&&(day.querySelector('.date')?.textContent||'').trim());
-    },undefined,{timeout:12000});
+    },undefined,{timeout:12000}).then(handle => handle.dispose());
   };
   try {
     await back();
@@ -57,7 +57,7 @@ export async function scanCouncilCalendar(form:Frame,policy:Policy,session:Provi
       if(councilDate(days[0].label,days[0].weekday)<=earliest) break;
       const key=JSON.stringify(days); session.assertAutomatic();
       await form.locator('#booking_day_selector a.left.carousel-control').click();
-      await form.waitForFunction(old=>{const days=Array.from(document.querySelectorAll('#booking_day_selector .carousel-item.active #week-cal .bds-day')).map(el=>({weekday:(el.querySelector('.day')?.textContent||'').trim(),label:(el.querySelector('.date')?.textContent||'').trim()}));return days.length>0 && days.every(day=>day.weekday && day.label) && JSON.stringify(days)!==old;},key,{timeout:5000});
+      await form.waitForFunction(old=>{const days=Array.from(document.querySelectorAll('#booking_day_selector .carousel-item.active #week-cal .bds-day')).map(el=>({weekday:(el.querySelector('.day')?.textContent||'').trim(),label:(el.querySelector('.date')?.textContent||'').trim()}));return days.length>0 && days.every(day=>day.weekday && day.label) && JSON.stringify(days)!==old;},key,{timeout:5000}).then(handle => handle.dispose());
     }
     for(;pages<14;pages++) {
       session.assertAutomatic(); const days=await readCouncilDays(form);
@@ -90,7 +90,7 @@ export async function scanCouncilCalendar(form:Frame,policy:Policy,session:Provi
       if(!await later.count() || await later.getAttribute('aria-disabled')==='true') {boundary='官网日期导航已到边界';break;}
       step='翻到下一组日期';session.assertAutomatic(); await later.click();
       try {
-        await form.waitForFunction(old=>{const days=Array.from(document.querySelectorAll('#booking_day_selector .carousel-item.active #week-cal .bds-day')).map(el=>({weekday:(el.querySelector('.day')?.textContent||'').trim(),label:(el.querySelector('.date')?.textContent||'').trim()}));return days.length>0 && days.every(day=>day.weekday && day.label) && JSON.stringify(days)!==old;},key,{timeout:5000});
+        await form.waitForFunction(old=>{const days=Array.from(document.querySelectorAll('#booking_day_selector .carousel-item.active #week-cal .bds-day')).map(el=>({weekday:(el.querySelector('.day')?.textContent||'').trim(),label:(el.querySelector('.date')?.textContent||'').trim()}));return days.length>0 && days.every(day=>day.weekday && day.label) && JSON.stringify(days)!==old;},key,{timeout:5000}).then(handle => handle.dispose());
       } catch {session.assertAutomatic();navigationFailed=true;boundary='官网下一组日期未切换';break;}
     }
   } catch(error) {

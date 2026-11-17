@@ -22,7 +22,7 @@ export async function waitGgcbCalendar(page:Page,timeout=15000) {
   await page.waitForFunction(()=>{
     const form=document.querySelector('#wc-bookings-booking-form');if(!form?.querySelector('td[class*="date-year-"]'))return false;
     return !Array.from(form.querySelectorAll('.wc-bookings-date-picker .blockOverlay')).some(el=>el.getBoundingClientRect().height>0 && getComputedStyle(el).display!=='none');
-  },undefined,{timeout});
+  },undefined,{timeout}).then(handle => handle.dispose());
 }
 export async function ggcbMonth(page:Page) {
   const title=(await page.locator('#wc-bookings-booking-form .ui-datepicker-title').innerText()).replace(/\s+/g,' ').trim();
@@ -54,7 +54,8 @@ export async function navigateGgcbMonth(page:Page,target:string,assertControl:()
     if(!await next.count() || await next.getAttribute('aria-disabled')==='true')throw new Error('GGCB月份导航已到边界');
     const previous=(await page.locator('#wc-bookings-booking-form .ui-datepicker-title').innerText()).replace(/\s+/g,' ').trim();
     assertControl();await next.click();
-    await Promise.race([page.waitForFunction(previous=>document.querySelector('#wc-bookings-booking-form .ui-datepicker-title')?.textContent?.replace(/\s+/g,' ').trim()!==previous,previous,{timeout}),failed]);
+    const changed = page.waitForFunction(previous=>document.querySelector('#wc-bookings-booking-form .ui-datepicker-title')?.textContent?.replace(/\s+/g,' ').trim()!==previous,previous,{timeout}).then(handle => handle.dispose());
+    await Promise.race([changed, failed]);
     await ready();
     if(await ggcbMonth(page)===month)throw new Error('GGCB月份未切换');
   }

@@ -81,9 +81,9 @@ export async function scanPlayFootball(page: Page, resource: Resource, policy: P
     await page.waitForFunction(old=>{
       const label=(document.querySelector('.bookings-calendar-picker') as HTMLElement)?.innerText;
       return !!label&&label!==old&&!!document.querySelector('.booking-slot');
-    },before.label,{timeout:15000});
+    },before.label,{timeout:15000}).then(handle => handle.dispose());
     await page.waitForFunction(old=>Array.from(document.querySelectorAll('.bookings-calendar-weekday')).map(x=>(x as HTMLElement).innerText.replace(/\s+/g,' ')).join('|')!==old,
-      before.headers.join('|'),{timeout:10000});
+      before.headers.join('|'),{timeout:10000}).then(handle => handle.dispose());
     snapshot=await readCalendar(page);
     if(calendarWeekStart(snapshot.label,reference)!==addDays(oldWeek,direction*7))throw new Error('翻周日期未按官网按钮方向更新');
     navigation='翻周成功';return true;

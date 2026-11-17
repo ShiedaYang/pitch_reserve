@@ -23,7 +23,9 @@ export async function runDesktop(root:string,args:string[],env:NodeJS.ProcessEnv
  if(!existsSync(config.password))throw new Error(`VNC password is missing. Run: mkdir -p "${folder}" && x11vnc -storepasswd "${config.password}"`);
  if(statSync(config.password).mode&0o077)throw new Error('VNC password permissions are too broad. Run chmod 600 on the vnc.pass file.');
  if(!existsSync(join(config.web,'vnc.html')))throw new Error('noVNC is missing. Install: sudo apt-get install xvfb x11vnc openbox novnc websockify xauth');
- if(await listening({port:config.vncPort,host:'127.0.0.1'})||await listening({port:config.webPort,host:'127.0.0.1'})||existsSync(`/tmp/.X${config.display.slice(1)}-lock`))throw new Error('Desktop display or port is already in use. Stop the existing desktop session first.');
+ // Xvfb checks its own lock PID and can recover a stale lock after SIGKILL.
+ // Reject a live display here without deleting any X server files.
+ if(await listening({port:config.vncPort,host:'127.0.0.1'})||await listening({port:config.webPort,host:'127.0.0.1'})||await displayReady(config.display))throw new Error('Desktop display or port is already in use. Stop the existing desktop session first.');
  const logs=join(config.data,'logs');mkdirSync(logs,{recursive:true,mode:0o700});const log=join(logs,'desktop-session.log');
  if(existsSync(log)&&statSync(log).size>2*1024*1024)renameSync(log,log+'.1');
  const record=(name:string,message:string)=>{try{appendFileSync(log,`${new Date().toISOString()} ${name}: ${safeLogText(message)}\n`,{mode:0o600});}catch{/* Console still reports component failures. */}};

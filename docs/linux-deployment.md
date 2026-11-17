@@ -103,6 +103,8 @@ Windows 的 DPAPI 密文不能直接在 Linux 解密。迁移时停止旧服务�
 Description=Pitch Reserve read-only monitor
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -114,8 +116,14 @@ Environment=PITCH_LAN_CIDRS=192.168.1.0/24
 Environment=PITCH_DATA_DIR=/var/lib/pitch_reserve
 Environment=PITCH_HEADLESS=1
 ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning scripts/start-server.ts
+MemoryAccounting=yes
+MemoryHigh=60%
+MemoryMax=75%
+MemorySwapMax=0
+OOMPolicy=kill
+KillMode=mixed
 Restart=on-failure
-RestartSec=10
+RestartSec=30
 TimeoutStopSec=120
 UMask=0077
 
@@ -214,6 +222,35 @@ location = /desktop/websockify {
 上游使用现有控制台的同一个地址，`proxy_pass` 不带 URI、末尾不加 `/`，使 `/desktop/websockify` 原样到达控制台。真实地址只放服务器 Nginx 配置中，不复制到项目。修改后在 Nginx 所在机器执行 `sudo nginx -t && sudo systemctl reload nginx`，并保持控制台运行后再测试。
 
 当前“检查远程桌面连接”检查的是 noVNC 网页可达性，成功仍需进一步验证 WebSocket 和 VNC 通道。网页上的 `package.json` 404 不一定会阻止连接；若后续仍发起 WebSocket，应该以 WebSocket 握手与 VNC 消息的结果定位问题。`1006` 是异常断开的通用结果，不能单凭它断言是代理、认证或浏览器问题。
+
+## Linux 长期运行的内存隔离
+
+先在虚拟机用 `free -h` 查看实际 RAM。`df -h` 的根分区大小是磁盘容量。在 Multipass 宿主机可用 `multipass get local.<实例名>.memory` 查询给该实例配置的 RAM。
+
+以原服务用户先正常停止已有实例。若希望退出 SSH 后仍运行，在虚拟机为该用户启用 linger，然后用隔离启动器运行原有部署脚本。项目目录和用户权限应与旧实例一致。原启动脚本负责注入私有环境变量及权限配置。
+
+```sh
+sudo loginctl enable-linger "$(id -un)"
+sh start-isolated.sh .local/run-desktop.sh
+systemctl --user status pitch-reserve.service --no-pager
+journalctl --user -u pitch-reserve.service -n 30 --no-pager
+```
+
+默认 `sh start-isolated.sh` 启动远程桌面。无头部署可传 `sh start-isolated.sh start.sh`，或者传入自己的启动脚本。以 `systemctl --user stop pitch-reserve.service` 停止。这个用户单元在当前开机周期内运行，OOM 后按服务策略恢复。需要随虚拟机开机启动时，可使用上面的 systemd 持久服务示例，并核对内核实际应用的限额。
+
+启动器把 Node、Chromium 和虚拟桌面子进程放进同一个 cgroup v2。达到虚拟机 `MemTotal` 的 60% 时，内核优先回收该组的可回收内存。75% 是硬上限，该组的 swap 上限为零。触发组内 OOM 时，内核终止该组进程，systemd 等待 30 秒重启，5 分钟内最多尝试启动 3 次。启动器核对内核实际应用的限额及 `memory.oom.group` 后才启动应用。
+
+```sh
+pitch_group=$(systemctl --user show pitch-reserve.service -p ControlGroup --value)
+if [ -n "$pitch_group" ]; then
+  for key in memory.current memory.high memory.max memory.swap.max memory.oom.group memory.events; do
+    printf '%s\n' "$key"
+    cat "/sys/fs/cgroup${pitch_group}/$key"
+  done
+fi
+```
+
+组内 OOM 的保护范围由 Linux 内核保证。宿主机仍需为所有虚拟机的配置内存、各虚拟机进程开销和宿主机服务合计留足物理 RAM。若宿主机需要硬隔离，应由虚拟机管理器从进程启动时把每台虚拟机及其辅助进程放进独立的宿主机内存 cgroup，并确保上层容量覆盖所有分配。客体内的启动器无法配置或验证宿主机的内存隔离。参见 [Linux cgroup v2 内存控制](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files)及 [Multipass 修改内存](https://canonical.com/multipass/docs/latest/how-to-guides/manage-instances/modify-an-instance/#set-the-cpus-ram-or-disk-space-of-an-instance)。
 
 ## Ubuntu 的 Chromium 沙箱启动失败
 
