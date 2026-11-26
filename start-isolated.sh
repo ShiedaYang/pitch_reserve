@@ -17,6 +17,10 @@ if [ ! -r "$launch_script" ] || ! command -v systemd-run >/dev/null 2>&1; then
   echo 'A readable launch script and systemd-run are required.' >&2
   exit 1
 fi
+if ! command -v systemd-notify >/dev/null 2>&1; then
+  echo 'systemd-notify is required for the independent watchdog.' >&2
+  exit 1
+fi
 if ! awk '{for (i=1; i<=NF; i++) if ($i == "memory") available=1} END {exit !available}' /sys/fs/cgroup/cgroup.controllers; then
   echo 'The cgroup v2 memory controller is required.' >&2
   exit 1
@@ -28,7 +32,7 @@ if [ -z "$total_mib" ] || [ "$total_mib" -lt 4 ]; then
   echo 'Cannot determine guest memory from /proc/meminfo.' >&2
   exit 1
 fi
-high_mib=$((total_mib * 60 / 100))
+high_mib=$((total_mib * 70 / 100))
 max_mib=$((total_mib * 75 / 100))
 
 exec systemd-run --user --unit=pitch-reserve.service --collect \
@@ -40,5 +44,7 @@ exec systemd-run --user --unit=pitch-reserve.service --collect \
   --property=Restart=on-failure --property=RestartSec=30s \
   --property=StartLimitIntervalSec=300s --property=StartLimitBurst=3 \
   --property=RestartPreventExitStatus=78 \
+  --property=WatchdogSec=180s --property=WatchdogSignal=SIGKILL \
+  --property=NotifyAccess=all --property=LimitCORE=0 \
   /bin/sh "$project_dir/scripts/require-memory-boundary.sh" \
   "$((high_mib * 1048576))" "$((max_mib * 1048576))" "$launch_script" "$@"

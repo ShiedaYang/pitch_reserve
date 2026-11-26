@@ -57,6 +57,17 @@ test('console E2E: real HTTP/SQLite, calendar links, saved preferences, encrypte
   await page.waitForFunction(()=>document.querySelector('#feishu-status')?.textContent?.includes('已保存')||document.querySelector('#feishu-error')?.textContent?.includes('已保存'));
   const saved=await (await fetch(base+'/api/state')).json();assert.equal(saved.feishu.hasSecret,true);assert.equal(saved.feishu.enabled,false);assert.equal(saved.feishu.adminEnabled,false);assert.ok(!JSON.stringify(saved).includes('e2e-fixture-not-a-real-secret'));
   assert.ok(!(await readFile(join(root,'integrations','feishu.json'),'utf8')).includes('e2e-fixture-not-a-real-secret'));
+  // Kill the actual API process, keeping its supervisor and this unrelated UI
+  // browser alive. Recovery must reopen the same database and encrypted settings.
+  const previous=JSON.parse(await readFile(join(root,'server.json'),'utf8'));
+  assert.notEqual(previous.pid,process.pid);assert.notEqual(previous.pid,child!.pid);
+  process.kill(previous.pid,'SIGKILL');
+  let automaticallyRestored:any;const recoveryDeadline=Date.now()+60000;
+  while(Date.now()<recoveryDeadline){try{const health=await (await fetch(base+'/api/health',{signal:AbortSignal.timeout(500)})).json();if(health.ok&&health.pid!==previous.pid){automaticallyRestored=await (await fetch(base+'/api/state')).json();break;}}catch{}await new Promise(resolve=>setTimeout(resolve,200));}
+  assert.ok(automaticallyRestored,'the independent supervisor must restore the real console');
+  assert.equal(automaticallyRestored.policy.lookahead,'14d');assert.equal(automaticallyRestored.feishu.hasSecret,true);assert.equal(automaticallyRestored.notifications.items.length,4);
+  assert.ok(automaticallyRestored.events.some((event:{code:string})=>event.code==='PROCESS_EXIT'));assert.equal(browser.isConnected(),true);
+  await page.reload();await page.locator('.provider').last().waitFor({state:'attached'});
   for(const width of [1440,390,320]){await page.setViewportSize({width,height:900});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);}
   await stop();await start();await page.reload();await page.locator('.provider').last().waitFor({state:'attached'});
   const restored=await (await fetch(base+'/api/state')).json();assert.equal(restored.policy.lookahead,'14d');assert.equal(restored.feishu.appId,'cli_e2e_fixture');assert.equal(restored.feishu.hasSecret,true);assert.equal(restored.notifications.items.length,4);assert.ok(restored.providers.every((provider:{mode:string})=>provider.mode==='PAUSED'));assert.deepEqual(errors,[]);

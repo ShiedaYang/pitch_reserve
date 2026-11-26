@@ -11,18 +11,65 @@ function isGgcbMonthRequest(request:Request){
   return (url.searchParams.get('wc-ajax')||new URLSearchParams(request.postData()||'').get('action'))==='wc_bookings_find_booked_day_blocks';
 }
 export function ggcbReleaseDate(date:string) {return addDays(`${date.slice(0,7)}-01`,-7);}
-export function isGgcbDayResponse(response:Response,date:string) {
-  const url=new URL(response.url());if(!['ggcb.co.uk','www.ggcb.co.uk'].includes(url.hostname))return false;
-  const data=new URLSearchParams(response.request().postData()||'');
-  if(data.get('action')!=='wc_bookings_get_blocks')return false;
+function ggcbDayRequest(request:Request){
+  const url=new URL(request.url());if(!['ggcb.co.uk','www.ggcb.co.uk'].includes(url.hostname))return;
+  const data=new URLSearchParams(request.postData()||url.search.slice(1));
+  if((data.get('action')||url.searchParams.get('wc-ajax'))!=='wc_bookings_get_blocks')return;
   const form=new URLSearchParams(data.get('form')||'');
-  return ['year','month','day'].map(part=>form.get(`wc_bookings_field_start_date_${part}`)).map((value,index)=>index?String(Number(value)).padStart(2,'0'):value).join('-')===date;
+  const parts=['year','month','day'].map(part=>form.get(`wc_bookings_field_start_date_${part}`));
+  const date=parts.every(value=>value&&/^\d+$/.test(value))?`${parts[0]}-${String(Number(parts[1])).padStart(2,'0')}-${String(Number(parts[2])).padStart(2,'0')}`:null;
+  return {date};
 }
+export function isGgcbDayResponse(response:Response,date:string){return ggcbDayRequest(response.request())?.date===date;}
 export async function waitGgcbCalendar(page:Page,timeout=15000) {
-  await page.waitForFunction(()=>{
-    const form=document.querySelector('#wc-bookings-booking-form');if(!form?.querySelector('td[class*="date-year-"]'))return false;
+  const handle=await page.waitForFunction(()=>{
+    const form=document.querySelector('#wc-bookings-booking-form');if(!form)return false;
+    if(form.querySelector('.wc-bookings-availability-error'))return 'FAILED';
+    if(!form.querySelector('td[class*="date-year-"]'))return false;
     return !Array.from(form.querySelectorAll('.wc-bookings-date-picker .blockOverlay')).some(el=>el.getBoundingClientRect().height>0 && getComputedStyle(el).display!=='none');
-  },undefined,{timeout}).then(handle => handle.dispose());
+  },undefined,{timeout});
+  let state:unknown;try{state=await handle.jsonValue();}finally{await handle.dispose();}
+  if(state==='FAILED')throw new GgcbCalendarError('MONTH_UNAVAILABLE','官网明确报告月份可用性查询失败','有限重载一次；持续失败时停止该月份查询，不读取旧日历');
+}
+export async function loadGgcbDay(page:Page,date:string,click:()=>Promise<unknown>,assertControl:()=>void,responseTimeout=12000,calendarTimeout=15000){
+  const matching=new Set<Request>();let requests=0,otherDate:string|null=null,networkError:string|undefined,status:number|undefined,disposed=false,settled=false;
+  let finish!:(value:Response|GgcbCalendarError)=>void,timer:NodeJS.Timeout|undefined;
+  const completed=new Promise<Response|GgcbCalendarError>(resolve=>finish=resolve);
+  const settle=(value:Response|GgcbCalendarError)=>{if(!disposed&&!settled){settled=true;finish(value);}};
+  const requested=(request:Request)=>{const data=ggcbDayRequest(request);if(!data)return;requests++;if(data.date===date){if(matching.size<32)matching.add(request);}else otherDate=data.date;};
+  const failed=(request:Request)=>{if(matching.has(request)){const error=request.failure()?.errorText;networkError=error&&/^net::ERR_[A-Z_]+$/.test(error)?error:'连接中断';}};
+  const received=(response:Response)=>{
+    if(!matching.has(response.request()))return;status=response.status();
+    if(response.headers()['cf-mitigated']==='challenge'){settle(new GgcbCalendarError('DAY_VERIFICATION_REQUIRED','官网时段响应要求人工验证','停止本轮读取，请人工检查官网验证；不连续刷新',status));return;}
+    if(!response.ok()){settle(new GgcbCalendarError('DAY_HTTP_ERROR',`日期时段请求返回 HTTP ${status}`,'检查官网后台接口；不把失败响应当作没有空位',status));return;}
+    // An aborted request can be followed by a replacement for the same date.
+    // Accept only a completed body; the overall deadline also bounds finished().
+    void response.finished().then(error=>{if(error)networkError='响应正文连接中断';else settle(response);},()=>{networkError='响应正文连接中断';});
+  };
+  const closed=()=>settle(new GgcbCalendarError('BROWSER_CLOSED','时段读取期间浏览器页面已关闭','结束当前等待，由会话恢复流程继续处理'));
+  page.on('request',requested);page.on('requestfailed',failed);page.on('response',received);page.on('close',closed);
+  let stage='CLICK';
+  try{
+    assertControl();await click();assertControl();stage='RESPONSE';
+    timer=setTimeout(()=>{
+      const remedy='有限重载后重试同一日期；持续失败则结束本轮，不使用旧库存';
+      if(!requests)settle(new GgcbCalendarError('DAY_NO_REQUEST','日期点击完成后，官网未发出时段请求',remedy));
+      else if(!matching.size)settle(new GgcbCalendarError('DAY_DATE_MISMATCH',`官网时段请求日期与目标日期不一致${otherDate?`（请求日期 ${otherDate}）`:''}`,remedy));
+      else if(networkError)settle(new GgcbCalendarError('DAY_NETWORK_ERROR',`日期时段请求失败（${networkError}）`,remedy,status));
+      else if(status)settle(new GgcbCalendarError('DAY_BODY_TIMEOUT',`时段响应 HTTP ${status}，但正文未在期限内接收完成`,remedy,status));
+      else settle(new GgcbCalendarError('TIMEOUT','已发出目标日期请求，但未在期限内收到响应',remedy));
+    },responseTimeout);
+    const response=await completed;assertControl();if(response instanceof GgcbCalendarError)throw response;
+    stage='PICKER';
+    await page.waitForFunction(()=>!Array.from(document.querySelectorAll('#wc-bookings-booking-form .block-picker')).some(el=>Array.from(el.closest('div')?.querySelectorAll('.blockOverlay')||[]).some(overlay=>overlay.getBoundingClientRect().height>0 && getComputedStyle(overlay).display!=='none')),undefined,{timeout:calendarTimeout}).then(handle=>handle.dispose());
+    assertControl();
+    const selected=await page.locator('#wc-bookings-booking-form').evaluate(form=>['year','month','day'].map(part=>(form.querySelector<HTMLInputElement>(`[name="wc_bookings_field_start_date_${part}"]`)?.value||'')).map((value,index)=>index?String(Number(value)).padStart(2,'0'):value).join('-'));
+    if(selected!==date)throw new GgcbCalendarError('DAY_DATE_MISMATCH','响应完成后页面所选日期发生变化，未读取该时段列表','恢复后重试同一日期，避免采用其他日期的库存');
+  }catch(error){
+    assertControl();
+    if(error instanceof Error&&error.name==='TimeoutError'&&!(error instanceof GgcbCalendarError))throw new GgcbCalendarError(stage==='CLICK'?'DAY_CLICK_TIMEOUT':'DAY_UI_TIMEOUT',stage==='CLICK'?'日期按钮未能在期限内完成点击':'时段响应已完成，但页面加载遮罩未消失','有限恢复后重试；不读取旧时段',stage==='PICKER'?status:undefined);
+    throw error;
+  }finally{disposed=true;clearTimeout(timer);page.off('request',requested);page.off('requestfailed',failed);page.off('response',received);page.off('close',closed);}
 }
 export async function ggcbMonth(page:Page) {
   const title=(await page.locator('#wc-bookings-booking-form .ui-datepicker-title').innerText()).replace(/\s+/g,' ').trim();
@@ -37,6 +84,7 @@ export async function navigateGgcbMonth(page:Page,target:string,assertControl:()
   const response=(response:Response)=>{
     if(!isGgcbMonthRequest(response.request()))return;
     lastStatus=response.status();
+    if(response.headers()['cf-mitigated']==='challenge')fail(new GgcbCalendarError('MONTH_VERIFICATION_REQUIRED','官网月份响应要求人工验证','停止本轮读取，请人工检查官网验证；不连续刷新',lastStatus));
     if(lastStatus>=400)fail(new GgcbCalendarError('MONTH_HTTP_ERROR',`月份后台请求返回 HTTP ${lastStatus}`,'检查官网后台接口和网络；程序有限重试，不把页面可见当作月份查询成功',lastStatus));
   };
   const requestFailed=(request:Request)=>{

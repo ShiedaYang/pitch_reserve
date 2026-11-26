@@ -19,8 +19,25 @@ export class Monitor {
   timer?: NodeJS.Timeout;
   stopping = false;
   private lastWindow?: string;
+  private lastReclaimed=-1;
   constructor(store: Store, root: string, persistCredentials=false) { this.store = store; const vault=persistCredentials?new CredentialVault(root):undefined;this.sessions = new Map(providerIds.map(id => [id, new ProviderSession(id, root,vault)])); }
   async restoreCredentials(){await Promise.all([...this.sessions.values()].map(session=>session.restoreCredentials()));}
+  recoveryState(){return [...this.sessions.values()].map(s=>({id:s.id,mode:s.recoveryMode,nextScanAt:s.nextScanAt,cooldownUntil:s.cooldownUntil,memoryRestUntil:s.memoryRestUntil}));}
+  restoreRuntimeState(input:unknown){
+    if(!Array.isArray(input))return;
+    for(const row of input){if(!row||!providerIds.includes(row.id)||!['AUTOMATION','MANUAL_CONTROL','PAUSED'].includes(row.mode))continue;
+      const s=this.sessions.get(row.id)!;if(!s.nativeVerification.pending)s.mode=row.mode;
+      for(const key of ['nextScanAt','cooldownUntil','memoryRestUntil'] as const)if(Number.isFinite(row[key])&&row[key]>=0)s[key]=Math.min(row[key],Date.now()+7*86400000);
+    }
+  }
+  async reclaimMemory(){
+    if(this.stopping)return false;
+    const candidates=providerIds.map((id,index)=>({s:this.sessions.get(id)!,index})).filter(({s})=>s.recyclable)
+      .sort((a,b)=>Number(!!a.s.job)-Number(!!b.s.job)||((a.index-this.lastReclaimed+providerIds.length-1)%providerIds.length)-((b.index-this.lastReclaimed+providerIds.length-1)%providerIds.length));
+    const candidate=candidates[0];if(!candidate)return false;
+    const {s,index}=candidate;this.store.event(`${s.id}：内存压力下保存会话并回收浏览器`,{level:'WARN',provider:s.id,stage:'RUNTIME',code:'MEMORY_RECLAIM_BEGIN'});
+    const released=await s.recycleBrowser();if(released){this.lastReclaimed=index;this.store.event(`${s.id}：浏览器已回收，至少等待5分钟后再按监测计划打开`,{provider:s.id,stage:'RUNTIME',code:'MEMORY_RECLAIM_COMPLETE',details:{nextRetryAt:new Date(s.nextScanAt).toISOString()}});}return released;
+  }
   state() {
     const policy = this.store.policy();
     this.store.notifications.expire(policy);
@@ -203,7 +220,7 @@ export class Monitor {
       if (s.status === 'LOGIN_REQUIRED') throw new Error('页面仍显示登录表单，请先在官网完成登录');
       s.mode = 'AUTOMATION'; s.nextScanAt = s.scanNotBefore; void this.scan(id).catch(() => {}); this.store.event(`${id}：恢复只读监测`,{provider:id,stage:'RECOVERY',code:'RESUMED'});
     } else if (action === 'scan') {
-      if(Date.now()<s.scanNotBefore)return {message:'PlayFootball 正在等待下次检查；立即检查也会遵守官网限流和网站等待间隔。'};
+      if(Date.now()<s.scanNotBefore)return {message:'网站正在等待下次检查；立即检查也会遵守内存回收和官网等待间隔。'};
       void this.scan(id).catch(() => {});
     }
     else throw new Error('不支持的操作');
