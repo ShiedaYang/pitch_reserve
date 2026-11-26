@@ -2,6 +2,8 @@ import { chromium } from 'playwright';
 import type { BrowserContext, Page } from 'playwright';
 import { mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {rename,rm} from 'node:fs/promises';
 import { loginUrls,resources } from './domain.ts';
 import {NativeVerification,verificationBrowser} from './native-verification.ts';
 import { councilUserPage } from './council-page.ts';
@@ -34,13 +36,16 @@ export class ProviderSession {
   reportedResponse?:WebsiteResponseError;
   readonly retainedCalendars=new WeakSet<Page>();
   private readonly documentLoadedAt=new WeakMap<Page,number>();
-  get scanNotBefore(){return this.id==='playfootball'?Math.max(this.cooldownUntil,this.responses?.issue?.retryAt??0):0;}
+  memoryRestUntil=0;
+  get scanNotBefore(){return Math.max(this.memoryRestUntil,this.id==='playfootball'?Math.max(this.cooldownUntil,this.responses?.issue?.retryAt??0):0);}
   get unreportedResponse(){const issue=this.responses?.issue;return issue&&issue!==this.reportedResponse&&(issue.kind==='HUMAN_VERIFICATION'||issue.retryAt!>Date.now())?issue:undefined;}
   nativeVerification:NativeVerification;
   responses?:PlayFootballResponses;
   private verifiedPage?:Page;
   private nextWebActionAt=0;
   private readonly actionClock:WebActionClock;
+  private reclaimMode?:{mode:Mode;revision:number};
+  get recoveryMode(){return this.reclaimMode?.revision===this.modeRevision?this.reclaimMode.mode:this.mode;}
   attention?:{kind:'TIMEOUT'|'HUMAN_VERIFICATION';message:string;at:string};
   get mode(){return this.#mode;}
   set mode(value:Mode){this.modeRevision++;if(value==='MANUAL_CONTROL'&&this.#mode!==value){this.lastManualActivityAt=Date.now();this.nextIdleCheckAt=0;}this.#mode=value;}
@@ -268,6 +273,30 @@ export class ProviderSession {
     try{await job;}catch(error){if(error instanceof Interrupted)throw error;if(this.modeRevision===revision){this.mode=previousMode==='PAUSED'?'PAUSED':'MANUAL_CONTROL';this.recordManualActivity();}throw new Error('浏览器重启失败，请稍后重试或手动接管；已保存账号未清除。');}
     finally{if(this.job===job)this.job=undefined;this.restarting=false;}
   }
+  get recyclable(){return !!this.context&&!this.opening&&!this.restarting&&this.mode!=='MANUAL_CONTROL'&&!this.needsHumanVerification&&!this.nativeVerification.pending;}
+  async recycleBrowser(delayMs=300000):Promise<boolean>{
+    if(!this.recyclable)return false;
+    const previousMode=this.mode,previousJob=this.job,context=this.context!;
+    this.restarting=true;this.mode='PAUSED';const revision=this.modeRevision;
+    this.reclaimMode={mode:previousMode,revision};
+    const bounded=async<T>(work:Promise<T>,milliseconds:number)=>{
+      let timer:NodeJS.Timeout|undefined;
+      try{return await Promise.race([work,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('Browser reclamation timed out')),milliseconds);})]);}
+      finally{clearTimeout(timer);}
+    };
+    const job=Promise.resolve().then(async()=>{
+      await bounded(this.saveSession(),3000).catch(()=>{});
+      await bounded(context.close(),10000);
+      await bounded(previousJob?.catch(()=>{})??Promise.resolve(),5000);
+      if(this.context===context)this.context=undefined;
+      this.pages.clear();this.manualPage=undefined;this.loginPage=undefined;this.verifiedPage=undefined;this.status='UNKNOWN';
+      this.memoryRestUntil=Math.max(this.memoryRestUntil,Date.now()+delayMs);
+      this.nextScanAt=Math.max(this.nextScanAt,this.scanNotBefore);
+      if(this.modeRevision===revision)this.mode=previousMode;
+      return true;
+    });this.job=job;
+    try{return await job;}finally{if(this.job===job)this.job=undefined;this.restarting=false;}
+  }
   async challengePage(){
     for(const page of this.context?.pages()??[]){if(!page.isClosed()&&(await authSignals(page,this.id)).challenge)return page;}
   }
@@ -306,8 +335,10 @@ export class ProviderSession {
   }
   async saveSession() {
     if (!this.context) return;
-    const folder = join(this.root, 'sessions'); mkdirSync(folder, { recursive: true });
-    await this.context.storageState({ path: join(folder, `${this.id}.json`) });
+    const folder = join(this.root, 'sessions'); mkdirSync(folder, { recursive: true,mode:0o700 });
+    const temporary=join(folder,`${this.id}.${randomUUID()}.tmp`);
+    try{await this.context.storageState({path:temporary});await rename(temporary,join(folder,`${this.id}.json`));}
+    finally{await rm(temporary,{force:true});}
   }
   async inspect() {
     return this.exclusive(async () => {

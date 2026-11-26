@@ -117,11 +117,15 @@ Environment=PITCH_DATA_DIR=/var/lib/pitch_reserve
 Environment=PITCH_HEADLESS=1
 ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning scripts/start-server.ts
 MemoryAccounting=yes
-MemoryHigh=60%
+MemoryHigh=70%
 MemoryMax=75%
 MemorySwapMax=0
 OOMPolicy=kill
 KillMode=mixed
+WatchdogSec=180s
+WatchdogSignal=SIGKILL
+NotifyAccess=all
+LimitCORE=0
 Restart=on-failure
 RestartSec=30
 TimeoutStopSec=120
@@ -238,7 +242,24 @@ journalctl --user -u pitch-reserve.service -n 30 --no-pager
 
 默认 `sh start-isolated.sh` 启动远程桌面。无头部署可传 `sh start-isolated.sh start.sh`，或者传入自己的启动脚本。以 `systemctl --user stop pitch-reserve.service` 停止。这个用户单元在当前开机周期内运行，OOM 后按服务策略恢复。需要随虚拟机开机启动时，可使用上面的 systemd 持久服务示例，并核对内核实际应用的限额。
 
-启动器把 Node、Chromium 和虚拟桌面子进程放进同一个 cgroup v2。达到虚拟机 `MemTotal` 的 60% 时，内核优先回收该组的可回收内存。75% 是硬上限，该组的 swap 上限为零。触发组内 OOM 时，内核终止该组进程，systemd 等待 30 秒重启，5 分钟内最多尝试启动 3 次。启动器核对内核实际应用的限额及 `memory.oom.group` 后才启动应用。
+启动器把监护进程、Node、Chromium 和虚拟桌面子进程放进同一个 cgroup v2。70% 是内核回收软阈值，75% 仍是硬上限，按虚拟机实际 `MemTotal` 计算；该组的 swap 上限为零。触发组内 OOM 时，内核终止该组进程，systemd 等待 30 秒重启，5 分钟内最多尝试启动 3 次。启动器核对内核实际应用的限额及 `memory.oom.group` 后才启动应用。
+
+从旧版更新时，`systemctl --user restart` 会沿用旧临时单元的参数。先停止旧单元，再用原部署脚本重建，才能启用新的软阈值和 systemd 看门狗：
+
+```sh
+systemctl --user stop pitch-reserve.service
+sh start-isolated.sh .local/run-desktop.sh
+```
+
+Windows 的 `start.ps1`、Linux 的 `start.sh` 和远程桌面共用一个独立 Node 监护进程，不增加第三方依赖。每 10 秒直接检查本实例的健康接口，单次限时 5 秒；持续 90 秒无响应后，先尝试正常停止，再清理本实例拥有的子进程，等待 30 秒恢复。普通停止和启动配置错误不会被自动重启。进程清理按父子关系及创建标识选择，不按浏览器名称终止进程。
+
+每 30 秒采样内存，连续两次达到软阈值的 85%、可用内存低于 10% 或出现明显内存停顿时，保存会话并回收一个浏览器，每分钟最多回收一个，至少等 5 分钟并遵守原有检查计划后才重新打开。优先回收空闲浏览器，必要时取消自动扫描；人工接管和人机验证窗口不参与普通内存回收。暂停状态及 PlayFootball 等待期限会传递给恢复后的实例。会话快照使用临时文件加原子替换，保存中断时保留上一份有效快照。
+
+回收 30 秒没有完成，或严重内存压力持续 3 分钟，会触发实例恢复。Linux 使用 cgroup 的实际内存和压力指标；Windows 使用本实例进程树工作集与系统可用内存，软件预算取物理 RAM 的 70% 与 3 GiB 的较小值。这是 Windows 的回收预算，并非 Windows 内核内存硬限制。Linux 内存隔离边界保持不变。
+
+Linux 同时启用 180 秒 systemd 看门狗，仅健康检查成功后发送心跳。即使整个服务组一起陷入回收停顿，systemd 仍可终止该组并按原策略重启。看门狗使用 SIGKILL，关闭核心转储，避免生成包含会话内容的大型内存文件。监护进程只在暂停状态或等待期限变化时，原子更新数据目录的 `runtime-checkpoint.json`；整组异常退出后据此恢复，正常停止时清除。该文件不保存账号、密码或 Cookie。
+
+回收记录可在“运行记录”中标为“运行保护”的条目查看；监护进程自身的记录在数据目录的 `logs/supervisor.log`，超过 2 MiB 轮换一份。恢复后沿用原通知队列与去重记录；启用了管理员通知时，恢复事件进入现有管理员通知流程。
 
 ```sh
 pitch_group=$(systemctl --user show pitch-reserve.service -p ControlGroup --value)
@@ -307,6 +328,10 @@ NODE
 “运行记录”支持按错误/警告/信息和网站筛选，每页 50 条，保留最近 5000 条 SQLite 记录。每轮检查带编号，记录阶段、耗时、日期覆盖、价格观察、重试次数、问题分类和处理建议。人工接管不等于无场地，仍显示“暂无信息”。
 
 服务端同时写入 `.local/logs/runtime-YYYY-MM-DD.jsonl`（或 `PITCH_DATA_DIR/logs`），按伦敦日期保留 14 天。启动检查失败也写入该日志，方便服务尚未启动时排查。桌面子进程故障记录在 `logs/desktop-session.log`；超过 2 MiB 后下次启动轮换为 `.1`。日志不记录请求正文、密码、Cookie、令牌或网页正文。日志文件写入失败时 SQLite 仍保留记录，页面提示文件写入问题。
+
+GGCB 在 Windows 和 Linux 共用日期恢复逻辑：先完成日期按钮点击，再开始时段响应计时；同时限制响应正文和页面遮罩等待。内存回收关闭浏览器时立即结束在途等待，不误触发整实例恢复。瞬时错误会在整页恢复后重试同一日期，每轮日期查询最多恢复一次；仍失败就保留已读日期和未放号标签，结束后续日期查询，等待下一轮。HTTP 403、429 或明确验证响应会直接停止本轮，不连续刷新。
+
+GGCB 日志区分 `DAY_NO_REQUEST`（点击后未发请求）、`DAY_DATE_MISMATCH`（请求或页面日期不符）、`DAY_NETWORK_ERROR`（网络或正文接收失败）、`DAY_BODY_TIMEOUT`（已收到响应头但正文未完成）、`DAY_CLICK_TIMEOUT`、`DAY_UI_TIMEOUT` 和 HTTP 状态。官网已经显示月份可用性错误时记录 `MONTH_UNAVAILABLE`，不继续等待旧日历遮罩。诊断不保存请求表单、Cookie、验证令牌或响应正文。
 
 ```sh
 tail -n 100 .local/logs/runtime-*.jsonl

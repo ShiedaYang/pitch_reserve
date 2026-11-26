@@ -20,6 +20,12 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const local = resolve(process.env.PITCH_DATA_DIR||join(root, '.local')); mkdirSync(local, { recursive: true,mode:0o700 });
 const store = new Store(join(local, 'monitor.sqlite')); const monitor = new Monitor(store, local,true);
 await monitor.restoreCredentials();
+try{monitor.restoreRuntimeState(JSON.parse(process.env.PITCH_RECOVERY_STATE||'[]'));}catch{/* An invalid checkpoint never changes normal startup. */}
+const recoveryReason=process.env.PITCH_RECOVERY_REASON;
+if(recoveryReason&&['HTTP_UNRESPONSIVE','STARTUP_UNRESPONSIVE','BROWSER_RECYCLE_STALLED','MEMORY_PRESSURE_PERSISTED','PROCESS_EXIT','UNCLEAN_EXIT'].includes(recoveryReason)){
+ store.event('控制台已由独立监护进程恢复',{level:'WARN',stage:'RUNTIME',code:recoveryReason,details:{reason:'上一实例持续无响应、内存回收未完成或异常退出',action:'仅清理本实例拥有的子进程，恢复持久化会话与通知队列'}});
+ store.incidents.report('system','RUNTIME_RECOVERY','控制台已自动恢复，请检查内存压力与运行记录。');
+}
 const feishu=new FeishuIntegration(store,new FeishuSettingsRepository(local));await feishu.restore();
 const desktop=new DesktopProxy(desktopUpstream(),()=>store.event('远程桌面连接失败',{level:'ERROR',stage:'REMOTE_DESKTOP',code:'DESKTOP_UNAVAILABLE',details:{reason:'无法连接本机 noVNC 服务',remedy:'检查桌面进程日志，使用 sh start-desktop.sh 启动服务'}}));
 function desktopState(){return {configured:!!desktop.upstream,url:manualBrowserUrl(),headless:!!browserOptions().headless,displayAvailable:!!process.env.DISPLAY};}
@@ -43,6 +49,7 @@ const server = createServer(async (req, res) => {
   if (!allowedHosts.has(req.headers.host??'') || (req.headers.origin && !allowedOrigins.has(req.headers.origin)) || req.headers['sec-fetch-site'] === 'cross-site') { json(403, { error: '仅接受已配置控制台来源的请求' }); return; }
   try {
     const url = new URL(req.url || '/', origin);
+    if(req.method==='GET'&&url.pathname==='/api/health'){json(stopping?503:200,{ok:!stopping,pid:process.pid,providers:monitor.recoveryState()});return;}
     if(url.pathname.startsWith('/desktop/')){desktop.http(req,res,url);return;}
     if(req.method==='GET'&&url.pathname==='/api/desktop'){json(200,{...desktopState(),...await desktop.check()});return;}
     if(req.method==='GET'&&url.pathname==='/api/events'){
@@ -110,8 +117,22 @@ server.listen(port, network.host, () => {
   if (process.env.PITCH_START_PAUSED === '1') for (const s of monitor.sessions.values()) s.mode = 'PAUSED';
   monitor.start();
   feishu.start();
+  setTimeout(()=>store.incidents.resolve('system'),300000).unref();
+  if(process.connected)process.send?.({type:'ready',host:network.host==='0.0.0.0'?'127.0.0.1':network.host,port,hostHeader:new URL(origin).host},()=>{});
 });
 server.on('error', error => { const issue=diagnoseError(error);store.event('控制台监听失败',{level:'ERROR',stage:'STARTUP',code:'LISTEN_FAILED',details:{reason:(error as NodeJS.ErrnoException).code==='EADDRINUSE'?'服务端口已被占用':issue.reason,remedy:'停止已有控制台进程，或更换 PORT 后重试'}});console.error('Console could not listen. Check the configured host/port and runtime logs.');void shutdown(1); });
 let stopping=false;
-async function shutdown(code=0) { if(stopping)return;stopping=true;store.event('正在停止监测并保存会话',{stage:'SHUTDOWN',code:'STOPPING'});server.close(); await Promise.all([feishu.close(),monitor.close()]);store.event('服务已正常停止',{stage:'SHUTDOWN',code:'STOPPED'});store.close(); process.exit(code); }
+async function shutdown(code=0) { if(stopping)return;stopping=true;if(code===0&&process.connected)process.send?.({type:'stopping'},()=>{});store.event('正在停止监测并保存会话',{stage:'SHUTDOWN',code:'STOPPING'});server.close(); await Promise.all([feishu.close(),monitor.close()]);store.event('服务已正常停止',{stage:'SHUTDOWN',code:'STOPPED'});store.close(); process.exit(code); }
 process.on('SIGINT', () => { void shutdown(); }); process.on('SIGTERM', () => { void shutdown(); });
+let reclaiming=false;
+process.on('message',(message:any)=>{
+ if(message?.type==='shutdown'){void shutdown();return;}
+ if(message?.type!=='reclaim'||reclaiming||stopping)return;
+ reclaiming=true;
+ const sample=message.sample;
+ if(sample&&[sample.used,sample.high,sample.available,sample.full].every(Number.isFinite))store.event(`内存压力：已用 ${Math.round(sample.used/1024**2)} MiB，软阈值 ${Math.round(sample.high/1024**2)} MiB，可用 ${Math.round(sample.available/1024**2)} MiB，停顿 ${sample.full}%`,{level:'WARN',stage:'RUNTIME',code:'MEMORY_PRESSURE'});
+ void monitor.reclaimMemory().then(released=>{if(!released)store.event('暂无可回收的自动浏览器，人工接管窗口保留',{level:'WARN',stage:'RUNTIME',code:'MEMORY_RECLAIM_DEFERRED'});if(process.connected)process.send?.({type:'reclaimed',released},()=>{});})
+  .catch(()=>{store.event('浏览器内存回收未完成，交由独立监护进程恢复',{level:'ERROR',stage:'RUNTIME',code:'BROWSER_RECYCLE_STALLED'});if(process.connected)process.send?.({type:'reclaim-failed'},()=>{});})
+  .finally(()=>{reclaiming=false;});
+});
+process.on('disconnect',()=>{void shutdown();});

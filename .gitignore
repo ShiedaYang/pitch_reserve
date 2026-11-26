@@ -32,6 +32,8 @@ node_modules/
 *.sqlite3-*
 *.db
 *.db-*
+runtime-checkpoint.json
+runtime-checkpoint.json.*.tmp
 
 # Generated reports, logs, screenshots and build outputs
 /test-results/

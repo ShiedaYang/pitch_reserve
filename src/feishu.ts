@@ -139,7 +139,7 @@ export class FeishuIntegration {
     for(const incident of this.store.incidents.list(true))this.store.db.prepare("INSERT OR IGNORE INTO feishu_admin_notifications(id,status,next_attempt_at) VALUES(?,'PENDING',?)").run(incident.id,this.clock().toISOString());
     const jobs=this.store.db.prepare(`SELECT n.id,n.attempts,i.provider,i.kind,i.message,i.opened_at FROM feishu_admin_notifications n JOIN monitor_incidents i ON i.id=n.id WHERE i.resolved_at IS NULL AND n.status IN ('PENDING','FAILED') AND n.next_attempt_at<=? ORDER BY i.opened_at LIMIT 3`).all(this.clock().toISOString()) as Array<{id:string;attempts:number;provider:string;kind:string;message:string;opened_at:string}>;
     for(const row of jobs){if(!allowed())return;
-      const names:Record<string,string>={ggcb:'GGCB',council:'Tower Hamlets',playfootball:'PlayFootball',feishu:'飞书发送'};
+      const names:Record<string,string>={ggcb:'GGCB',council:'Tower Hamlets',playfootball:'PlayFootball',feishu:'飞书发送',system:'控制台运行保护'};
       const lines=[`网站 / 模块：${names[row.provider]??row.provider}`,`发现时间：${new Date(row.opened_at).toLocaleString('zh-CN',{timeZone:'Europe/London',hour12:false})}（伦敦时间）`,`问题：${row.message}`,'请管理员打开控制台检查运行记录；如遇人机验证，请人工完成验证。'];
       const post={zh_cn:{title:'场地监测需要管理员处理',content:lines.map(text=>[{tag:'text',text}])}};
       try{for(const recipient of settings.adminRecipients?.filter(recipient=>recipient.enabled)??[])await this.sendOne({id:row.id},recipient,settings,client,allowed,post);

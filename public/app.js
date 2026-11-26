@@ -112,7 +112,7 @@ function renderDesktop(){
  $('desktop-open').hidden=!remote;if(remote)$('desktop-open').href=remote;
  $('desktop-help').textContent=d.configured&&!d.headless?'打开远程浏览器后输入桌面密码。先在下方选择网站的“手动接管”；PlayFootball 验证循环时使用“普通浏览器验证”，验证完成后关闭该专用窗口。':'Ubuntu 无桌面环境请按部署说明安装桌面组件，再使用 sh start-desktop.sh 启动。该脚本会切换为有界面模式，并在此提供远程入口。Windows 本机可直接操作工具浏览器。';
 }
-const stageNames={STARTUP:'启动检查',SHUTDOWN:'服务停止',SCAN_START:'开始监测',SCAN_COMPLETE:'监测结果',OPEN_PAGE:'打开官网',CALENDAR:'读取日历',MONTH_LOAD:'月份加载',MONTH_RECOVERY:'月份恢复',DAY_LOAD:'时段加载',RETRY:'重试',RECOVERY:'恢复监测',LOGIN:'登录',SESSION:'会话检查',BROWSER:'浏览器',MANUAL_CONTROL:'人工接管',DELIVERY:'消息发送',REMOTE_DESKTOP:'远程桌面',CONSOLE_ACTION:'控制台操作',LEGACY:'历史操作',OPERATION:'操作'};
+const stageNames={STARTUP:'启动检查',SHUTDOWN:'服务停止',RUNTIME:'运行保护',SCAN_START:'开始监测',SCAN_COMPLETE:'监测结果',OPEN_PAGE:'打开官网',CALENDAR:'读取日历',MONTH_LOAD:'月份加载',MONTH_RECOVERY:'月份恢复',DAY_LOAD:'时段加载',RETRY:'重试',RECOVERY:'恢复监测',LOGIN:'登录',SESSION:'会话检查',BROWSER:'浏览器',MANUAL_CONTROL:'人工接管',DELIVERY:'消息发送',REMOTE_DESKTOP:'远程桌面',CONSOLE_ACTION:'控制台操作',LEGACY:'历史操作',OPERATION:'操作'};
 function renderActivity(){
  const data=activityPage||{items:state.events||[],nextCursor:null};
  $('event-summary').textContent=activityLoading?'正在读取…':`保留最近 ${state.logging?.retained||5000} 条 · 本页 ${data.items.length} 条`;
